@@ -1,0 +1,48 @@
+CREATE TABLE
+
+CREATE TABLE payment_received (
+    payment_id int PRIMARY KEY,
+    email text,
+    amount_paid int,
+    status text
+)
+
+CREATE TABLE item (
+    itemid int PRIMARY KEY,
+    name text,
+    description text
+)
+
+CREATE TABLE user_item_like (
+    userid int,
+    itemid int,
+    rating int,
+    PRIMARY KEY (userid, itemid)
+)
+
+INSERT INTO ecommerce.payment_received (payment_id, email, amount_paid, status) 
+VALUES (1, 'rafi.adyatma@gmail.com', 450000, 'COMPLETE');
+
+INSERT INTO ecommerce.payment_received (payment_id, email, amount_paid, status) 
+VALUES (2, 'user2@bot.com', 1000, 'DELAYED');
+
+INSERT INTO ecommerce.user (userid, email, name) 
+VALUES (3, 'adnan.wick@yahoo.com', 'Adnan W');
+
+INSERT INTO ecommerce.user (userid, email, name) 
+VALUES (4, 'rio.aditia@paboi.com', 'Rio Aditia');
+
+INSERT INTO ecommerce.item (itemid, name, description)
+VALUES (1, 'Keyboard', 'Mechanical Gaming Keyboard')
+
+INSERT INTO ecommerce.item (itemid, name, description)
+VALUES (2, 'Nvidia GPU', 'Asus RTX 3080 GPU')
+
+INSERT INTO ecommerce.user_item_like (userid, itemid, rating)
+VALUES (1, 1, 4)
+
+INSERT INTO ecommerce.user_item_like (userid, itemid, rating)
+VALUES (1, 2, 3)
+
+INSERT INTO ecommerce.user_item_like (userid, itemid, rating)
+VALUES (2, 1, 5)
