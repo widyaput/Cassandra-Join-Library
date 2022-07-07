@@ -32,6 +32,18 @@ VALUES (3, 'adnan.wick@yahoo.com', 'Adnan W');
 INSERT INTO ecommerce.user (userid, email, name) 
 VALUES (4, 'rio.aditia@paboi.com', 'Rio Aditia');
 
+INSERT INTO ecommerce.user (userid, email, name) 
+VALUES (5, 'fuad.adaki@gmail.com', 'Farid Adika');
+
+INSERT INTO ecommerce.user (userid, email, name) 
+VALUES (6, 'putri.devi@gmail.com', 'Putri Devi');
+
+INSERT INTO ecommerce.user (userid, email, name) 
+VALUES (7, 'faskal.rama@gmail.com', 'Faskal Rama');
+
+INSERT INTO ecommerce.user (userid, email, name) 
+VALUES (8, 'khalwa_ernest@gmail.com', 'Khalwa Ernest');
+
 INSERT INTO ecommerce.item (itemid, name, description)
 VALUES (1, 'Keyboard', 'Mechanical Gaming Keyboard')
 

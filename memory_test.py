@@ -2,27 +2,61 @@ import os
 import tempfile, shutil
 import json
 
-# Create dummy content
-dummy_content = {"ID" : 1, 
-                "Name" : "Rafi Adyatma",
-                "Email" : "rafi.adyatma@gmail.com"
-                }
+import psutil
+from pympler import asizeof
 
-temp_file = tempfile.NamedTemporaryFile(mode='w+t', delete=False)
-file_name = temp_file.name
+from utils import *
 
-# Write to file
-# f.write('lmao')
-json.dump(dummy_content, temp_file)
+from cassandra.cluster import Cluster
+from cassandra.query import dict_factory, SimpleStatement
 
-# Read to file
-temp_file.seek(0)
-file_content = json.load(temp_file)
+def handle_success(rows):
+    user = rows[0]
+    try:
+        print("A")
+    except Exception:
+        print("Failed to process user")
 
-temp_file.close()
-# shutil.copy(file_name, 'joinTemp.txt')
+def handle_error(exception):
+    print("Failed to fetch user info")
 
-print(temp_file)
-print(file_content['ID'])
 
-os.remove(file_name)
+cluster = Cluster()
+
+# Keyspace, Table and Join Column Information
+keyspace_name = 'ecommerce'
+left_table = "user"
+right_table = "payment_received"
+join_column = "email"
+
+third_table = "user_item_like"
+third_join_column = "userid"
+
+session = cluster.connect(keyspace_name)
+
+# Set the row factory as dictionary factory, ResultSet is List of Dictionary
+session.row_factory = dict_factory
+
+memory_usage = dict(psutil.virtual_memory()._asdict())
+print(memory_usage)
+print()
+
+total_memory = byte_to_gigabyte(memory_usage['total'])
+avail_memory = byte_to_gigabyte(memory_usage['available'])
+used_memory = byte_to_gigabyte(memory_usage['used'])
+free_memory = byte_to_gigabyte(memory_usage['free'])
+wired_memory = byte_to_gigabyte(memory_usage['wired'])
+active_memory = byte_to_gigabyte(memory_usage['active'])
+
+memory_diff = total_memory - (avail_memory + used_memory + free_memory)
+active_diff = used_memory - (wired_memory + active_memory)
+used_percentage = ((used_memory) / total_memory) * 100
+
+print("Total : ", total_memory, "GB")
+print("Available : ", avail_memory, "GB")
+print("Used : ", used_memory,"GB")
+print("Free : ", free_memory, "GB")
+print()
+print("Used Percentage : ", used_percentage, "%")
+print("Memory Difference : ", memory_diff, "GB")
+print("Active Memory Difference : ", active_diff, "GB")

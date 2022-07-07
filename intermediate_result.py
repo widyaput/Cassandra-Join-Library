@@ -1,12 +1,18 @@
-# Intermediate result
+from pympler import asizeof
 
-class IntermediateResult:
+from utils import *
 
-    def __init__(self, join_column):
+# Intermediate result for hash join
+class IntermediateHashResult:
+
+    def __init__(self, join_column, join_order, max_size, next_join_column):
         super().__init__()
         self.hash_table = {}
         self.total_rows = 0
         self.join_column = join_column
+        self.max_data_size = max_size
+        self.join_order = join_order
+        self.next_join_column = next_join_column
     
 
 
@@ -43,6 +49,10 @@ class IntermediateResult:
         # Join is N x M operation
         result = []
 
+        # Flag to use partition on local or not
+        should_use_partition = False
+        partitions_id = {}
+
         for key in self.hash_table:
             left_list = self.hash_table[key][0]
             right_list = self.hash_table[key][1]
@@ -52,10 +62,36 @@ class IntermediateResult:
                 continue
 
 
-            for left_item in left_list:
-                for right_item in right_list:
-                    merged = dict(list(left_item.items()) + list(right_item.items()))
-                    result.append(merged)
+            for left_idx in range(len(left_list)):
+                left_item = left_list[left_idx]
+                
+                # Use merged_buffer when data should be divided
+                # merged_buffer = []
+
+                for right_idx in range(len(right_list)):
+                    right_item = right_list[right_idx]
+                    # Double checking real value (hash value already matched)
+                    if (left_item[self.join_column] == right_item[self.join_column]):
+                        merged = dict(list(left_item.items()) + list(right_item.items()))
+
+                        result_size = asizeof.asizeof(result)
+                        merged = asizeof.asizeof(merged)
+
+                        # Checking whether memory still fit
+                        if ((self.max_data_size <= result_size + merged) and (not should_use_partition)):
+                            should_use_partition = True
+
+                        if (should_use_partition):
+                            result_join_num = self.join_order + 1
+                            
+                            row_partition_id = put_into_partition([merged], result_join_num, self.next_join_column)
+                            partitions_id.union(row_partition_id)
+
+                        else :
+                            result.append(merged)
+                
+                # Preserve Memory
+                left_item[left_idx] = None
 
             # Remove after usage, maintain memory usage
             self.hash_table[key] = []
@@ -63,7 +99,7 @@ class IntermediateResult:
         # Reset
         self.hash_table = {}
 
-        return result
+        return result, partitions_id
 
 
 
