@@ -1,3 +1,4 @@
+import json
 from pympler import asizeof
 
 from utils import *
@@ -52,7 +53,7 @@ class IntermediateDirectHashResult:
 
         # Flag to use partition on local or not
         should_use_partition = False
-        partitions_id = {}
+        partitions_id = set()
 
         result_join_num = self.join_order + 1
 
@@ -78,16 +79,16 @@ class IntermediateDirectHashResult:
                         merged = dict(list(left_item.items()) + list(right_item.items()))
 
                         result_size = asizeof.asizeof(result)
-                        merged = asizeof.asizeof(merged)
+                        merged_size = asizeof.asizeof(merged)
 
                         # Checking whether memory still fit
-                        if ((self.max_data_size <= result_size + merged) and (not should_use_partition)):
+                        if ((self.max_data_size <= result_size + merged_size) and (not should_use_partition)):
                             should_use_partition = True
 
                         if (should_use_partition):
                             
                             row_partition_id = put_into_partition([merged], result_join_num, self.next_join_column)
-                            partitions_id.union(row_partition_id)
+                            partition_id = partitions_id.union(row_partition_id)
 
                         else :
                             result.append(merged)
@@ -101,9 +102,11 @@ class IntermediateDirectHashResult:
         # Reset
         self.hash_table = {}
 
-        # Flush Result
-        put_into_partition(result, result_join_num, self.next_join_column)
-        result = []
+        # Flush Result if partition needed
+        if (should_use_partition):
+            flushed_partition_ids = put_into_partition(result, result_join_num, self.next_join_column, True)
+            partition_id = partitions_id.union(flushed_partition_ids)
+            result = []
 
         return result, partitions_id
 
@@ -121,11 +124,18 @@ class IntermediatePartitionedHashResult:
 
         self.max_data_size = max_size
         self.join_order = join_order
-        self.next_join_column = next_join_column
+
+        # If next join column is None, therefore it is the final result
+        # For final result, set next_join_column = join_column
+        if (next_join_column == None):
+            self.next_join_column = join_column
+        else :
+            self.next_join_column = next_join_column
 
     def process_partition_pair(self, partition_num):
 
         partition_hash_table = {}
+        join_order = self.join_order
 
         left_partition = read_from_partition(join_order, partition_num, True)
         right_partition = read_from_partition(join_order, partition_num, False)
@@ -134,9 +144,13 @@ class IntermediatePartitionedHashResult:
         if ((left_partition == None) or (right_partition == None)):
             # Gives no result, return empty hash table immediately
             return {}
-        
+        print("\nLeft partition : ", left_partition)
+
         # Process left table. Assume left table always be the Build Table
         for left_row in left_partition:
+            # Convert string to JSON
+            left_row = json.loads(left_row[:-1])
+
             key = left_row[self.join_column]
             if (key in partition_hash_table):
                 # There is already a key for that join column
@@ -149,6 +163,9 @@ class IntermediatePartitionedHashResult:
         
         # Process right table. Assume right table always be the Probe table
         for right_row in right_partition:
+            # Convert string to JSON
+            right_row = json.loads(right_row[:-1])
+
             key = right_row[self.join_column]
             if (key in partition_hash_table):
                 # There is already a key for that join column
@@ -163,7 +180,7 @@ class IntermediatePartitionedHashResult:
 
         join_order = self.join_order
 
-        result_partition_ids = {}
+        result_partition_ids = set()
         
         for partition_id in all_partitions:
             
@@ -195,10 +212,13 @@ class IntermediatePartitionedHashResult:
                     
                 # For each partition, flush into local disk
                 next_join_order = self.join_order + 1
+
+                print("Partition join result : ", partition_join_result)
+
                 result_hash_values = put_into_partition(partition_join_result, next_join_order, self.next_join_column, True)
 
                 # Merge partition ids with other ids
-                result_partition_ids.union(result_hash_values)
+                result_partition_ids = result_partition_ids.union(result_hash_values)
             
             else :
                 # TODO: Create for Left outer, Right outer, and Full outer join case

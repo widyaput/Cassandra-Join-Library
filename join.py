@@ -3,6 +3,9 @@ from pympler import asizeof
 
 from commands import *
 from intermediate_result import IntermediateDirectHashResult, IntermediatePartitionedHashResult
+from utils import *
+from math_utils import *
+
 from cassandra.query import dict_factory
 
 class JoinExecutor:
@@ -27,7 +30,7 @@ class JoinExecutor:
         self.table_query = {}
 
         # Saving partition ID for current join
-        self.current_join_partition_id = {}
+        self.current_join_partition_ids = set()
 
         # Set default select query on left_table
         self.table_query[table_name] = f"SELECT * FROM {table_name}"
@@ -42,6 +45,9 @@ class JoinExecutor:
 
         # Save all join information, this info will be used to execute join
         self.joins_info = []
+
+        # To force use partition method
+        self.force_partition = True
 
 
     def setLeftTable(self, table, column):
@@ -182,7 +188,7 @@ class JoinExecutor:
             join_info = self.joins_info[join_info_idx]
 
             join_type = join_info['join_type']
-            right_table = join_info['join']
+            right_table = join_info['right_table']
             join_column = join_info['join_column']
 
             # Next join column will be used to partition the result of current join
@@ -199,119 +205,181 @@ class JoinExecutor:
             self._decide_join(join_type, right_table, join_column, next_join_column)
             # or execute partitioned-join
 
-        return self.current_result
+            # Increment join_order num
+            self.join_order += 1
 
 
-    def _get_required_data(self, join_type, right_table, join_column):
-        # Try to read data from source directly
-        # If data partitioned, directly use partition-join and load data while joining
+        # Build final result here
 
-        is_data_in_partitions = False
+        if (self.current_result == []): # Final result is in disk
+            # For now, merge all results to memory
+            # TODO: Merge to file or print per batch
+            final_result = []
+            partition_ids = self.current_join_partition_ids
+            final_join_order = self.join_order
 
+            for id in partition_ids:
+                # Read data
+                partition_data = read_from_partition(final_join_order, id, True)
+                for row in partition_data:
+                    # Convert to JSON then add to final result
+                    row = json.loads(row[:-1])
+                    final_result.append(row)
+
+            # TODO: Delete all tmpfiles after join operation
+
+            return final_result
+        
+        else : # Final result is in memory (self.current_result), return immediately
+
+            return self.current_result
+
+    def _get_left_data(self, join_column):
         session = self.session
 
         left_table_rows = None
-        right_table_rows = None
+        is_data_in_partitions = False
+        partition_ids = set()
 
         # Read data
-        if (self.current_result == None): # Current Result is None
-            
-            # Left table is from self.left_table
+        if (self.join_order == 1): # First join, all data are in Cassandra
             left_table_query = self.table_query[self.left_table]
-
             print("Left-Table query : ", left_table_query)
 
-            # TODO: Use paging query
+            # TODO: Use paging and async
             left_table_rows = session.execute(left_table_query)
 
-            # SIZE CHECKING
-            if (self.max_data_size <= asizeof.asizeof(left_table_rows)): 
-                # Left table is bigger than max data size in memory, use partition
-                # TODO: Divide data into partitions
-                return False
 
-
-            # Right table
-            right_table_query = self.table_query[right_table]
-
-            print("Right-Table query : ", right_table_query)
-
-            # TODO: Use paging query
-            right_table_rows = session.execute(right_table_query)
-
-            # SIZE CHECKING
-            if (self.max_data_size <= asizeof.asizeof(left_table_rows) + asizeof.asizeof(right_table_rows)): 
-                # Left table is bigger than max data size in memory, use partition
-                # TODO: Divide data into partitions
-                return False
-        
-        else : # Current Result is Available
-            
-            left_table_rows = None
-            
-            # Decide the source of left table
-            if (self.current_result == []): 
-                # All current result has been flushed, read from partition
-                # left_table_rows = read_from_partition(1,2)
+        else : # Non first join, left table may in self.current_result or in partitions
+            if (self.current_result == []): # Result of previous join is in local disk as partitions
+                print("Masuk disk")
                 left_table_rows = None
-                right_table_rows = None
                 is_data_in_partitions = True
-                return left_table_rows, right_table_rows, is_data_in_partitions
+                partition_ids = self.current_join_partition_ids
 
-            else:
-                # Left table is from self.current_result
+                print("Left table partition ids : ", self.current_join_partition_ids)
+
+                return left_table_rows, is_data_in_partitions, partition_ids
+
+            else :
+                print("Masuk memory")
+                print(self.current_result)
                 left_table_rows = self.current_result
+                
+                # Reset current result to preserve memory
+                self.current_result = []
 
-            # Right table
-            right_table_query = self.table_query[right_table]
+        # SIZE CHECKING
+        if ((self.max_data_size <= asizeof.asizeof(left_table_rows)) or self.force_partition): 
+            # Left table is bigger than max data size in memory, use partition
+            is_data_in_partitions = True
+            
+            # Flush left table
+            partition_ids = put_into_partition(left_table_rows, self.join_order, join_column, True)
+            left_table_rows = None
 
-            print("Right-Table query : ", right_table_query)
-
-            # TODO: Use paging query
-            right_table_rows = session.execute(right_table_query)
-
-
-        return left_table_rows, right_table_rows, is_data_in_partitions
-
-
-    def _get_required_partitioned_data(self, join_type, right_table, join_column):
+        return left_table_rows, is_data_in_partitions, partition_ids
 
 
-        return
+    def _get_right_data(self, right_table, join_column, is_left_table_partitioned):
+
+        session = self.session
+
+        right_table_rows = None
+        is_data_in_partitions = False
+        partition_ids = set()
+
+        right_table_query = self.table_query[right_table]
+        print("Right-Table query : ", right_table_query)
+
+        # TODO: Use paging and async
+        right_table_rows = session.execute(right_table_query)
+
+        # SIZE CHECKING
+        if (((self.max_data_size <= asizeof.asizeof(right_table_rows)) or (is_left_table_partitioned)) or self.force_partition): 
+            # Left table is bigger than max data size in memory, use partition
+            is_data_in_partitions = True
+            
+            # Flush right table
+            partition_ids = put_into_partition(right_table_rows, self.join_order, join_column, False)
+            right_table_rows = None
+
+        return right_table_rows, is_data_in_partitions, partition_ids
 
 
     def _decide_join(self, join_type, right_table, join_column, next_join_column):
         # Try to load data first in here, then decide how the join will be implemented
         # Directly or Partitioned
 
-        self._execute_partition_join(join_type, right_table, join_column, next_join_column)
+        # Get Left table data
+        left_table_rows, is_left_table_in_partitions, left_partition_ids = self._get_left_data(join_column)
+
+        # Get right table data
+        right_table_rows, is_right_table_in_partitions, right_partition_ids = self._get_right_data(right_table, join_column, is_left_table_in_partitions)
+
+        # Check size
+        if ((not is_left_table_in_partitions) and (not is_right_table_in_partitions)):
+            if (self.max_data_size <= (asizeof.asizeof(left_table_rows) + asizeof.asizeof(right_table_rows))):
+                # Flush both tables
+                left_partition_ids = put_into_partition(left_table_rows, self.join_order, join_column, True)
+                right_partition_ids = put_into_partition(right_table_rows, self.join_order, join_column, False)
+
+                is_left_table_in_partitions = True
+                is_right_table_in_partitions = True
+
+
+        # Do join based on whether partitions is used or not
+        if (is_left_table_in_partitions and is_right_table_in_partitions):
+            all_partition_ids = left_partition_ids.union(right_partition_ids)
+
+            print("Left partition ids : ", left_partition_ids)
+            print("Right partition ids : ", right_partition_ids)
+            print("Merged Partition ids : ", all_partition_ids)
+
+            self._execute_partition_join(join_type, right_table, join_column, next_join_column, all_partition_ids)
+
+        else :
+            self._execute_join(left_table_rows, right_table_rows, join_type, right_table, join_column, next_join_column)
 
         return
 
 
-    def _execute_partition_join(self, join_type, right_table, join_column, next_join_column):
+    def _execute_partition_join(self, join_type, right_table, join_column, next_join_column, partition_ids):
 
+        intermediate_result = IntermediatePartitionedHashResult(join_column, join_type, self.join_order, self.max_data_size, next_join_column)
+        result_partition_ids = intermediate_result.build_result(partition_ids)
+
+        print("Execute partition join ids : ", result_partition_ids)
+
+        # Save partition_ids of result for next join in case needed
+        self.current_join_partition_ids = result_partition_ids
+
+        # Set current result with empty list, indicating all results are in disk
+        self.current_result = []
+
+
+        print(f"JOIN with order num {self.join_order} completed with Partition Method")
+        print(f"Result partitions ID are : {result_partition_ids}\n\n")
 
         return
     
     
-    def _execute_join(self, join_type, right_table, join_column, next_join_column):
+    def _execute_join(self, left_table_rows, right_table_rows, join_type, right_table, join_column, next_join_column):
 
         session = self.session
 
         # Check whether current result is available
         intermediate_result = IntermediateDirectHashResult(join_column, join_type, self.join_order,self.max_data_size, next_join_column)
-        
-        left_table_rows, right_table_rows, is_data_in_partitions = self._get_required_data(join_type, right_table, join_column)
-        
-        # Check should join be executed in partitioned way
-        if (is_data_in_partitions):
-            # Call execute partition join
-            self._execute_partition_join(join_type, right_table, join_column, next_join_column)
-            return
 
         # TODO : Add rows to intermediate_result based on join type (Inner/ Outer)
         # Also consider non equi-join
+
+        # Convert result set as list
+        left_table_rows = list(left_table_rows)
+        right_table_rows = list(right_table_rows)
+
+        print("Left table : ", left_table_rows)
+        print("Right table : ", right_table_rows)
 
         # Left table insertion to intermediate_result and clear left table rows for each iteration
         for idx in range(len(left_table_rows)):
@@ -329,10 +397,13 @@ class JoinExecutor:
         left_table_rows = None
         right_table_rows = None
         
-        result = intermediate_result.build_result()
+        result, result_partition_ids = intermediate_result.build_result()
 
         # Append result as current result
         self.current_result = result
+
+        print(f"JOIN with order num {self.join_order} completed with direct method")
+        print("\n\n")
 
         return
 

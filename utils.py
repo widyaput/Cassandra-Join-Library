@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 from tabulate import tabulate
 
 
@@ -78,12 +79,14 @@ def read_from_partition(iter_num, partition_id, is_left):
     f = open(partition_path, 'r')
     data = f.readlines()
 
+    print("READ FROM PARTITION RESULT : ", data)
+
     return data
 
 
 def put_into_partition(data_page, iter_num, join_column, is_left_table):
 
-    hash_values_set = {}
+    hash_values_set = set()
 
     cwd = os.getcwd()
     tmp_folder_name = "tmpfolder"
@@ -114,7 +117,7 @@ def put_into_partition(data_page, iter_num, join_column, is_left_table):
         hash_values_set.add(partition_number)
 
         f = open(parittion_fullname, mode='a')
-        f.write(str(data)+"\n")
+        f.write(json.dumps(data)+"\n")
         f.close()
     
 

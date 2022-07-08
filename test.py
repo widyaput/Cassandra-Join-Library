@@ -26,7 +26,6 @@ session.row_factory = dict_factory
 # Checking Existence of join column
 
 
-intermediate_result = IntermediateResult(join_column)
 # Dictionary save key-value with
 # Key is the join column
 # Value is the IDs from left and right table
@@ -34,7 +33,6 @@ intermediate_result = IntermediateResult(join_column)
 
 start_time = time.time()
 # -------------------------- Start here --------------------------
-
 
 join_result = JoinExecutor(session, keyspace_name, left_table) \
     .join(right_table, join_column) \

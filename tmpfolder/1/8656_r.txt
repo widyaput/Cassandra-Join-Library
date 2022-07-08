@@ -1,0 +1,1 @@
+{"amount_paid": 1000, "email": "user2@bot.com", "payment_id": 2, "status": "DELAYED"}
