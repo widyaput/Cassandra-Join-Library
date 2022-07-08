@@ -1,2 +1,0 @@
-{"userid": 1, "email": "rafi.adyatma@gmail.com", "name": "Rafi Adyatma", "amount_paid": 450000, "payment_id": 1, "status": "COMPLETE", "itemid": 1, "rating": 4}
-{"userid": 1, "email": "rafi.adyatma@gmail.com", "name": "Rafi Adyatma", "amount_paid": 450000, "payment_id": 1, "status": "COMPLETE", "itemid": 2, "rating": 3}

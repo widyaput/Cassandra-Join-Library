@@ -1,1 +1,0 @@
-{"userid": 6, "email": "putri.devi@gmail.com", "name": "Putri Devi"}
