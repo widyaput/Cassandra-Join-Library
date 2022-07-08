@@ -26,4 +26,4 @@ hs_err_pid*
 tmpfiles
 
 # pycache
-__pycache__
+__pycache__/
