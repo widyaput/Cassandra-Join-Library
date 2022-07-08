@@ -6,6 +6,7 @@ import psutil
 from pympler import asizeof
 
 from utils import *
+from math_utils import *
 
 from cassandra.cluster import Cluster
 from cassandra.query import dict_factory, SimpleStatement

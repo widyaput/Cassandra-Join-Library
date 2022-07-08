@@ -49,8 +49,36 @@ def partition_hash_function(M): # H1(X) Function
     return hash_value
 
 
-def read_from_partition(iter_num, partition_id):
-    return
+def read_from_partition(iter_num, partition_id, is_left):
+    cwd = os.getcwd()
+    tmp_folder = "tmpfolder"
+
+    tmp_folder_path = os.path.join(cwd, tmp_folder)
+
+    if (not os.path.isdir(tmp_folder_path)):
+        print("No TmpFolder detected!")
+    
+    iter_path = os.path.join(tmp_folder_path, str(iter_num))
+
+    partition_path = None
+    partition_name = None
+    if (is_left):
+        partition_name = str(partition_id) + "_l.txt"
+        partition_path = os.path.join(iter_path, partition_name)
+
+    else : # Right table
+        partition_name = str(partition_id) + "_r.txt"
+        partition_path = os.path.join(iter_path, partition_name)
+
+    # File not found check
+    if (not os.path.isfile(partition_path)):
+        print(f"Partition {partition_name} from Join Order : {iter_num} is not found!")
+        return None
+
+    f = open(partition_path, 'r')
+    data = f.readlines()
+
+    return data
 
 
 def put_into_partition(data_page, iter_num, join_column, is_left_table):
@@ -96,22 +124,7 @@ def put_into_partition(data_page, iter_num, join_column, is_left_table):
     return hash_values_set
 
 
-def bit_to_byte(b):
-    as_byte = b / 8
+def flush_to_local(dataset, iter_num, join_column, is_left):
 
-    return as_byte
 
-def byte_to_kilobyte(b):
-    as_kb = b / (1e3)
-
-    return as_kb
-
-def byte_to_megabyte(b):
-    as_mb = b / (1e6)
-
-    return as_mb
-
-def byte_to_gigabyte(b):
-    as_gb = b / (1e9)
-
-    return as_gb
+    return

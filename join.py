@@ -2,7 +2,7 @@ import psutil
 from pympler import asizeof
 
 from commands import *
-from intermediate_result import IntermediateHashResult
+from intermediate_result import IntermediateDirectHashResult, IntermediatePartitionedHashResult
 from cassandra.query import dict_factory
 
 class JoinExecutor:
@@ -203,6 +203,10 @@ class JoinExecutor:
 
 
     def _get_required_data(self, join_type, right_table, join_column):
+        # Try to read data from source directly
+        # If data partitioned, directly use partition-join and load data while joining
+
+        is_data_in_partitions = False
 
         session = self.session
 
@@ -248,7 +252,11 @@ class JoinExecutor:
             # Decide the source of left table
             if (self.current_result == []): 
                 # All current result has been flushed, read from partition
-                left_table_rows = read_from_partition(1,2)
+                # left_table_rows = read_from_partition(1,2)
+                left_table_rows = None
+                right_table_rows = None
+                is_data_in_partitions = True
+                return left_table_rows, right_table_rows, is_data_in_partitions
 
             else:
                 # Left table is from self.current_result
@@ -263,16 +271,26 @@ class JoinExecutor:
             right_table_rows = session.execute(right_table_query)
 
 
-        return left_table_rows, right_table_rows
+        return left_table_rows, right_table_rows, is_data_in_partitions
+
+
+    def _get_required_partitioned_data(self, join_type, right_table, join_column):
+
+
+        return
 
 
     def _decide_join(self, join_type, right_table, join_column, next_join_column):
-        
+        # Try to load data first in here, then decide how the join will be implemented
+        # Directly or Partitioned
+
+        self._execute_partition_join(join_type, right_table, join_column, next_join_column)
 
         return
 
 
     def _execute_partition_join(self, join_type, right_table, join_column, next_join_column):
+
 
         return
     
@@ -282,10 +300,16 @@ class JoinExecutor:
         session = self.session
 
         # Check whether current result is available
-        intermediate_result = IntermediateHashResult(join_column, self.join_order,self.max_data_size, next_join_column)
+        intermediate_result = IntermediateDirectHashResult(join_column, join_type, self.join_order,self.max_data_size, next_join_column)
         
-        left_table_rows, right_table_rows = self._get_required_data(join_type, right_table, join_column)
+        left_table_rows, right_table_rows, is_data_in_partitions = self._get_required_data(join_type, right_table, join_column)
         
+        # Check should join be executed in partitioned way
+        if (is_data_in_partitions):
+            # Call execute partition join
+            self._execute_partition_join(join_type, right_table, join_column, next_join_column)
+            return
+
         # TODO : Add rows to intermediate_result based on join type (Inner/ Outer)
         # Also consider non equi-join
 
@@ -318,6 +342,6 @@ class JoinExecutor:
         return 
 
     
-    def _flush_current_res_to_memory(self):
+    def _flush_to_local(self):
 
         return

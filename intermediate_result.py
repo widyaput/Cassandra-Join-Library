@@ -3,10 +3,11 @@ from pympler import asizeof
 from utils import *
 
 # Intermediate result for hash join
-class IntermediateHashResult:
+class IntermediateDirectHashResult:
 
-    def __init__(self, join_column, join_order, max_size, next_join_column):
+    def __init__(self, join_column, join_type, join_order, max_size, next_join_column):
         super().__init__()
+        self.join_type = join_type
         self.hash_table = {}
         self.total_rows = 0
         self.join_column = join_column
@@ -53,6 +54,8 @@ class IntermediateHashResult:
         should_use_partition = False
         partitions_id = {}
 
+        result_join_num = self.join_order + 1
+
         for key in self.hash_table:
             left_list = self.hash_table[key][0]
             right_list = self.hash_table[key][1]
@@ -82,7 +85,6 @@ class IntermediateHashResult:
                             should_use_partition = True
 
                         if (should_use_partition):
-                            result_join_num = self.join_order + 1
                             
                             row_partition_id = put_into_partition([merged], result_join_num, self.next_join_column)
                             partitions_id.union(row_partition_id)
@@ -99,8 +101,108 @@ class IntermediateHashResult:
         # Reset
         self.hash_table = {}
 
+        # Flush Result
+        put_into_partition(result, result_join_num, self.next_join_column)
+        result = []
+
         return result, partitions_id
 
 
 
 
+class IntermediatePartitionedHashResult:
+
+    def __init__(self, join_column, join_type, join_order, max_size, next_join_column):
+        super().__init__()
+        self.total_rows = 0
+
+        self.join_type = join_type
+        self.join_column = join_column
+
+        self.max_data_size = max_size
+        self.join_order = join_order
+        self.next_join_column = next_join_column
+
+    def process_partition_pair(self, partition_num):
+
+        partition_hash_table = {}
+
+        left_partition = read_from_partition(join_order, partition_num, True)
+        right_partition = read_from_partition(join_order, partition_num, False)
+
+        # Check if left partition or right partition is not found
+        if ((left_partition == None) or (right_partition == None)):
+            # Gives no result, return empty hash table immediately
+            return {}
+        
+        # Process left table. Assume left table always be the Build Table
+        for left_row in left_partition:
+            key = left_row[self.join_column]
+            if (key in partition_hash_table):
+                # There is already a key for that join column
+                partition_hash_table[key][0].append(left_row)
+            
+            else :
+                # Key is new for the hash table
+                partition_hash_table[key] = ([left_row],[])
+            
+        
+        # Process right table. Assume right table always be the Probe table
+        for right_row in right_partition:
+            key = right_row[self.join_column]
+            if (key in partition_hash_table):
+                # There is already a key for that join column
+                partition_hash_table[key][1].append(right_row)
+            
+            else :
+                partition_hash_table[key][1] = ([],[right_row])
+
+        return partition_hash_table
+
+    def build_result(self, all_partitions):
+
+        join_order = self.join_order
+
+        result_partition_ids = {}
+        
+        for partition_id in all_partitions:
+            
+            # Hash table access 
+            # partition_hash_table[key][0] for left rows
+            # partition_hash_table[key][1] for right rows
+            partition_hash_table = self.process_partition_pair(partition_id)
+            partition_join_result = []
+
+            # Do the partition join based on join type
+            if (self.join_type == "INNER"):
+
+                # Do the join
+                for key in partition_hash_table:
+                    left_list = partition_hash_table[key][0]
+                    right_list = partition_hash_table[key][1]
+                    # Check if left list or right list is empty
+
+                    if ((left_list == None) or (right_list == None)):
+                        # Gives no result, continue to next key
+                        continue
+
+                    for left_row in left_list:
+                        for right_row in right_list:
+                            # Compare for double checking equality
+                            if (left_row[self.join_column] == right_row[self.join_column]):
+                                merged = dict(list(left_row.items()) + list(right_row.items()))
+                                partition_join_result.append(merged)
+                    
+                # For each partition, flush into local disk
+                next_join_order = self.join_order + 1
+                result_hash_values = put_into_partition(partition_join_result, next_join_order, self.next_join_column, True)
+
+                # Merge partition ids with other ids
+                result_partition_ids.union(result_hash_values)
+            
+            else :
+                # TODO: Create for Left outer, Right outer, and Full outer join case
+                return []
+
+        return result_partition_ids
+        
