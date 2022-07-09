@@ -20,6 +20,8 @@ CREATE TABLE user_item_like (
     PRIMARY KEY (userid, itemid)
 )
 
+SELECT column_name from system_schema.columns WHERE keyspace_name = 'ecommerce' AND table_name = 'user';
+
 INSERT INTO ecommerce.payment_received (payment_id, email, amount_paid, status) 
 VALUES (1, 'rafi.adyatma@gmail.com', 450000, 'COMPLETE');
 

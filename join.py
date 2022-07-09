@@ -346,7 +346,44 @@ class JoinExecutor:
 
     def _execute_partition_join(self, join_type, right_table, join_column, next_join_column, partition_ids):
 
-        intermediate_result = IntermediatePartitionedHashResult(join_column, join_type, self.join_order, self.max_data_size, next_join_column)
+        # Check whether current result is available
+        join_info = {
+            "join_order" : self.join_order,
+            "join_column" : join_column,
+            "join_type" : join_type,
+            "left_columns" : set(),
+            "right_columns" : set() 
+        }
+
+        # Get metadata
+        left_table_column_names = None
+        right_table_column_names = None
+
+        # First join order always get column names from Cassandra
+        if (self.join_order == 1):
+            left_table_column_names = get_column_names_from_db(self.session, self.keyspace, self.left_table)
+
+        else :
+            # Join is not first order
+            if (self.current_result == []): # Result is in local
+                left_table_column_names = get_column_names_from_local(self.join_order, self.current_join_partition_ids)
+
+            else :
+                left_table_column_names = set()
+                first_row = self.current_result[0]
+
+                for column_name in first_row:
+                    left_table_column_names.add(first_row)
+
+                print("left_table_column_names read from current result")
+
+        right_table_columns = get_column_names_from_db(self.session, self.keyspace, right_table)
+
+        # Add column names to join_info
+        join_info['left_columns'] = left_table_column_names
+        join_info['right_columns'] = right_table_column_names
+
+        intermediate_result = IntermediatePartitionedHashResult(join_info, self.max_data_size, next_join_column)
         result_partition_ids = intermediate_result.build_result(partition_ids)
 
         print("Execute partition join ids : ", result_partition_ids)
@@ -369,7 +406,43 @@ class JoinExecutor:
         session = self.session
 
         # Check whether current result is available
-        intermediate_result = IntermediateDirectHashResult(join_column, join_type, self.join_order,self.max_data_size, next_join_column)
+        join_info = {
+            "join_order" : self.join_order,
+            "join_column" : join_column,
+            "join_type" : join_type,
+            "left_columns" : set(),
+            "right_columns" : set() 
+        }
+
+        # Get metadata
+        left_table_column_names = None
+        right_table_column_names = None
+
+        # First join order always get column names from Cassandra
+        if (self.join_order == 1):
+            left_table_column_names = get_column_names_from_db(self.session, self.keyspace, self.left_table)
+
+        else :
+            # Join is not first order
+            if (self.current_result == []): # Result is in local
+                left_table_column_names = get_column_names_from_local(self.join_order, self.current_join_partition_ids)
+
+            else :
+                left_table_column_names = set()
+                first_row = self.current_result[0]
+
+                for column_name in first_row:
+                    left_table_column_names.add(first_row)
+
+                print("left_table_column_names read from current result")
+
+        right_table_columns = get_column_names_from_db(self.session, self.keyspace, right_table)
+
+        # Add column names to join_info
+        join_info['left_columns'] = left_table_column_names
+        join_info['right_columns'] = right_table_column_names
+
+        intermediate_result = IntermediateDirectHashResult(join_info, self.max_data_size, next_join_column)
 
         # TODO : Add rows to intermediate_result based on join type (Inner/ Outer)
         # Also consider non equi-join
@@ -381,16 +454,41 @@ class JoinExecutor:
         print("Left table : ", left_table_rows)
         print("Right table : ", right_table_rows)
 
+        # Set build and probe, build table is smaller
+        left_table_size = asizeof.asizeof(left_table_rows)
+        right_table_size = asizeof.asizeof(right_table_rows)
+        
+
+        # Swap table boolean. Left table is build table by default
+        should_swap_table = False
+
+        if (left_table_size < right_table_size):
+            # Build table is right table, so swap is mandatory
+            should_swap_table = True
+
+
         # Left table insertion to intermediate_result and clear left table rows for each iteration
         for idx in range(len(left_table_rows)):
             row = left_table_rows[idx]
-            intermediate_result.add_row_to_intermediate(row, True)
+
+            # Left table is build table by default
+            is_build_table = True
+            if (should_swap_table):
+                is_build_table = False
+
+            intermediate_result.add_row_to_intermediate(row, is_build_table)
             left_table_rows[idx] = None
 
         # Right table insertion to intermediate_result and clear right table rows for each iteration
         for idx in range(len(right_table_rows)):
             row = right_table_rows[idx]
-            intermediate_result.add_row_to_intermediate(row, False)
+
+            # Right table is probe table by default
+            is_build_table = False
+            if (should_swap_table):
+                is_build_table = True
+
+            intermediate_result.add_row_to_intermediate(row, is_build_table)
             right_table_rows[idx] = None
 
         # Clear both left_table_rows and right_table_rows

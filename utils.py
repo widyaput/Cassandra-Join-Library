@@ -50,7 +50,7 @@ def partition_hash_function(M): # H1(X) Function
     return hash_value
 
 
-def read_from_partition(iter_num, partition_id, is_left):
+def read_from_partition(join_order, partition_id, is_build):
     cwd = os.getcwd()
     tmp_folder = "tmpfolder"
 
@@ -59,11 +59,11 @@ def read_from_partition(iter_num, partition_id, is_left):
     if (not os.path.isdir(tmp_folder_path)):
         print("No TmpFolder detected!")
     
-    iter_path = os.path.join(tmp_folder_path, str(iter_num))
+    iter_path = os.path.join(tmp_folder_path, str(join_order))
 
     partition_path = None
     partition_name = None
-    if (is_left):
+    if (is_build):
         partition_name = str(partition_id) + "_l.txt"
         partition_path = os.path.join(iter_path, partition_name)
 
@@ -73,7 +73,7 @@ def read_from_partition(iter_num, partition_id, is_left):
 
     # File not found check
     if (not os.path.isfile(partition_path)):
-        print(f"Partition {partition_name} from Join Order : {iter_num} is not found!")
+        print(f"Partition {partition_name} from Join Order : {join_order} is not found!")
         return None
 
     f = open(partition_path, 'r')
@@ -84,7 +84,7 @@ def read_from_partition(iter_num, partition_id, is_left):
     return data
 
 
-def put_into_partition(data_page, iter_num, join_column, is_left_table):
+def put_into_partition(data_page, join_order, join_column, is_left_table):
 
     hash_values_set = set()
 
@@ -96,7 +96,7 @@ def put_into_partition(data_page, iter_num, join_column, is_left_table):
     if (not os.path.isdir(tmp_folder_path)):
         os.mkdir(tmp_folder_path)
 
-    iter_path = os.path.join(tmp_folder_path, str(iter_num))
+    iter_path = os.path.join(tmp_folder_path, str(join_order))
 
     if (not os.path.isdir(iter_path)):
         os.mkdir(iter_path)
@@ -127,7 +127,50 @@ def put_into_partition(data_page, iter_num, join_column, is_left_table):
     return hash_values_set
 
 
-def flush_to_local(dataset, iter_num, join_column, is_left):
+def empty_table_guard(dataset):
 
+    if (dataset == None):
+        return True
 
-    return
+    return False
+
+def get_column_names_from_db(session, keyspace, table):
+    # Get column names for Cassandra 3.x and above
+    cql = f"SELECT column_name from system_schema.columns WHERE keyspace_name = '{keyspace}' AND table_name = '{table}';"
+
+    result_set = session.execute(cql)
+    column_names = set()
+
+    for column in result_set:
+        column_name = column['column_name']
+        column_names.add(column_name)
+
+    return column_names
+
+def get_column_names_from_local(join_order, partition_ids):
+    # Assume this method only required for left-table
+    column_names = set()
+    partition_ids = list(partition_ids)
+
+    first_id = partition_ids[0]
+
+    cwd = os.getcwd()
+    tmp_folder = "tmpfolder"
+
+    tmp_folder_path = os.path.join(cwd, tmp_folder)
+
+    if (not os.path.isdir(tmp_folder_path)):
+        print("No TmpFolder detected!")
+    
+    iter_path = os.path.join(tmp_folder_path, str(join_order))
+    first_id_path = os.path.join(iter_path, str(first_id) + "_l.txt")
+
+    # Read from file
+    f = open(first_id_path, 'r')
+    first_data = f.readline()
+    convert_to_dict = json.loads(first_data[:-1])
+
+    for key in convert_to_dict:
+        column_names.add(key)
+
+    return column_names

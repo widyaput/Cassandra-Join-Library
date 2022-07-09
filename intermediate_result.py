@@ -6,19 +6,26 @@ from utils import *
 # Intermediate result for hash join
 class IntermediateDirectHashResult:
 
-    def __init__(self, join_column, join_type, join_order, max_size, next_join_column):
+    def __init__(self, join_info, max_size, next_join_column):
         super().__init__()
-        self.join_type = join_type
+        self.join_type = join_info['join_type']
+        self.join_order = join_info['join_order']
+        self.join_column = join_info['join_column']
+
         self.hash_table = {}
         self.total_rows = 0
-        self.join_column = join_column
+
         self.max_data_size = max_size
-        self.join_order = join_order
+
         self.next_join_column = next_join_column
+
+        # Metadata for both tables
+        self.left_table_meta = join_info['left_columns']
+        self.right_table_meta = join_info['right_columns']
     
 
 
-    def add_row_to_intermediate(self, row_dict, is_left):
+    def add_row_to_intermediate(self, row_dict, is_build):
     # If certain value for join column is already available, append to left / right list
     # If not, add new hashtable member with new value (empty left and right list)
 
@@ -30,7 +37,7 @@ class IntermediateDirectHashResult:
 
         if (key_value in self.hash_table):
             # Insert to left / right list
-            if (is_left):
+            if (is_build):
                 self.hash_table[key_value][0].append(row_dict)
             
             else :
@@ -39,7 +46,7 @@ class IntermediateDirectHashResult:
 
         else :
             # Make tuple of left list and right list
-            if (is_left):
+            if (is_build):
                 self.hash_table[key_value] = ([row_dict],[])
             else :
                 self.hash_table[key_value] = ([],[row_dict])
@@ -115,15 +122,19 @@ class IntermediateDirectHashResult:
 
 class IntermediatePartitionedHashResult:
 
-    def __init__(self, join_column, join_type, join_order, max_size, next_join_column):
+    def __init__(self, join_info, max_size, next_join_column):
         super().__init__()
         self.total_rows = 0
 
-        self.join_type = join_type
-        self.join_column = join_column
+        self.join_type = join_info['join_type']
+        self.join_column = join_info['join_column']
+        self.join_order = join_info['join_order']
 
         self.max_data_size = max_size
-        self.join_order = join_order
+        
+        # Metadata for both tables
+        self.left_table_meta = join_info['left_columns']
+        self.right_table_meta = join_info['right_columns']
 
         # If next join column is None, therefore it is the final result
         # For final result, set next_join_column = join_column
