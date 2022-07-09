@@ -475,6 +475,7 @@ class JoinExecutor:
             is_build_table = True
             if (should_swap_table):
                 is_build_table = False
+                intermediate_result.swap_build_and_probe()
 
             intermediate_result.add_row_to_intermediate(row, is_build_table)
             left_table_rows[idx] = None

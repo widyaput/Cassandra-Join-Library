@@ -22,7 +22,15 @@ class IntermediateDirectHashResult:
         # Metadata for both tables
         self.left_table_meta = join_info['left_columns']
         self.right_table_meta = join_info['right_columns']
+
+        self.build = "L"
+        self.probe = "R"
     
+
+    def swap_build_and_probe(self):
+        self.build = "R"
+        self.probe = "L"
+
 
 
     def add_row_to_intermediate(self, row_dict, is_build):
@@ -65,12 +73,39 @@ class IntermediateDirectHashResult:
         result_join_num = self.join_order + 1
 
         for key in self.hash_table:
+            # Left list is ACTUALLY BUILD LIST
             left_list = self.hash_table[key][0]
+            # Right list is ACTUALLY PROBE LIST
             right_list = self.hash_table[key][1]
+            
 
-            if (len(left_list) == 0 or len(right_list) == 0):
-                # No Result for current key
-                continue
+            # TODO: [VERY IMPORTANT] Do the join based on join_type
+            if (self.join_type == "INNER"):
+                print("INNER")
+                if (len(left_list) == 0 or len(right_list) == 0):
+                    # No Result for current key
+                    continue
+            
+            elif (self.join_type == "LEFT_OUTER"):
+                print("LEFT OUTER")
+                if ((len(left_list) == 0) and self.build == "L"):
+                    continue
+
+                if ((len(right_list) == 0) and self.build == "R"):
+                    continue
+
+            
+            elif (self.join_type == "RIGHT_OUTER"):
+                print("RIGHT OUTER")
+                if ((len(right_list) == 0) and self.build == "L"):
+                    continue
+
+                if ((len(left_list) == 0) and self.build == "R"):
+                    continue
+
+            
+            else : # join_type == FULL_OUTER
+                print("FULL OUTER")
 
 
             for left_idx in range(len(left_list)):
