@@ -174,7 +174,7 @@ class IntermediatePartitionedHashResult:
         # If next join column is None, therefore it is the final result
         # For final result, set next_join_column = join_column
         if (next_join_column == None):
-            self.next_join_column = join_column
+            self.next_join_column = join_info['join_column']
         else :
             self.next_join_column = next_join_column
 

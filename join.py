@@ -19,6 +19,7 @@ class JoinExecutor:
 
         # Saving current result for the join process
         self.current_result = None
+        self.current_result_column_names = None
 
         # Saving commands for Lazy execution
         self.command_queue = []
@@ -47,7 +48,7 @@ class JoinExecutor:
         self.joins_info = []
 
         # To force use partition method
-        self.force_partition = True
+        self.force_partition = False
 
 
     def setLeftTable(self, table, column):
@@ -363,21 +364,11 @@ class JoinExecutor:
         if (self.join_order == 1):
             left_table_column_names = get_column_names_from_db(self.session, self.keyspace, self.left_table)
 
+
         else :
-            # Join is not first order
-            if (self.current_result == []): # Result is in local
-                left_table_column_names = get_column_names_from_local(self.join_order, self.current_join_partition_ids)
+            left_table_column_names = self.current_result_column_names
 
-            else :
-                left_table_column_names = set()
-                first_row = self.current_result[0]
-
-                for column_name in first_row:
-                    left_table_column_names.add(first_row)
-
-                print("left_table_column_names read from current result")
-
-        right_table_columns = get_column_names_from_db(self.session, self.keyspace, right_table)
+        right_table_column_names = get_column_names_from_db(self.session, self.keyspace, right_table)
 
         # Add column names to join_info
         join_info['left_columns'] = left_table_column_names
@@ -394,6 +385,9 @@ class JoinExecutor:
         # Set current result with empty list, indicating all results are in disk
         self.current_result = []
 
+        # Save metadata of column names of left table to self.current_result_column_names
+        new_left_table_column_names = left_table_column_names.union(right_table_column_names)
+        self.current_result_column_names = new_left_table_column_names
 
         print(f"JOIN with order num {self.join_order} completed with Partition Method")
         print(f"Result partitions ID are : {result_partition_ids}\n\n")
@@ -423,20 +417,9 @@ class JoinExecutor:
             left_table_column_names = get_column_names_from_db(self.session, self.keyspace, self.left_table)
 
         else :
-            # Join is not first order
-            if (self.current_result == []): # Result is in local
-                left_table_column_names = get_column_names_from_local(self.join_order, self.current_join_partition_ids)
+            left_table_column_names = self.current_result_column_names
 
-            else :
-                left_table_column_names = set()
-                first_row = self.current_result[0]
-
-                for column_name in first_row:
-                    left_table_column_names.add(first_row)
-
-                print("left_table_column_names read from current result")
-
-        right_table_columns = get_column_names_from_db(self.session, self.keyspace, right_table)
+        right_table_column_names = get_column_names_from_db(self.session, self.keyspace, right_table)
 
         # Add column names to join_info
         join_info['left_columns'] = left_table_column_names
@@ -500,6 +483,10 @@ class JoinExecutor:
 
         # Append result as current result
         self.current_result = result
+
+        # Save metadata of column names of left table to self.current_result_column_names
+        new_left_table_column_names = left_table_column_names.union(right_table_column_names)
+        self.current_result_column_names = new_left_table_column_names
 
         print(f"JOIN with order num {self.join_order} completed with direct method")
         print("\n\n")
