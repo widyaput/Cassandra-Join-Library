@@ -1,0 +1,43 @@
+CREATE TABLE user (
+    userid INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    nickname VARCHAR(50) NOT NULL,
+    gold INT(10) NOT NULL,
+    bubble INT(10) NOT NULL
+);
+
+CREATE TABLE item (
+    id INT(6) AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    price INT(10) NOT NULL
+);
+
+CREATE TABLE purchase (
+    itemid INT NOT NULL,
+    userid INT UNSIGNED NOT NULL,
+    order_amount INT(10) NOT NULL,
+    PRIMARY KEY (itemid, userid),
+    FOREIGN KEY (itemid) REFERENCES item(id),
+    FOREIGN KEY (userid) REFERENCES user(userid)
+
+);
+
+INSERT INTO user VALUES(1, "Rainburn", 4747, 1100);
+INSERT INTO user VALUES(2, "arhazza", 9999, 2211);
+INSERT INTO user VALUES(3, "Dee", 100, 5000);
+INSERT INTO user VALUES(4, "vyxeze", 2000, 250);
+
+INSERT INTO item VALUES(1, "Vandal", 2900);
+INSERT INTO item VALUES(2, "Phantom", 2900);
+
+
+INSERT INTO purchase VALUES(1, 1, 2);
+INSERT INTO purchase VALUES(2, 2, 1);
+INSERT INTO purchase VALUES(1, 3, 1);
+
+
+SELECT * FROM user T1
+LEFT JOIN purchase T2 ON T1.userid = T2.userid
+LEFT OUTER JOIN item T3 ON T2.itemid = T3.id;
+
+SELECT * FROM purchase T2
+LEFT JOIN item T3 ON T2.itemid = T3.id;

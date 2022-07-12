@@ -174,3 +174,12 @@ def get_column_names_from_local(join_order, partition_ids):
         column_names.add(key)
 
     return column_names
+
+
+def construct_null_columns(column_names):
+
+    null_columns = {}
+    for col_name in column_names:
+        null_columns[col_name] = None
+
+    return null_columns

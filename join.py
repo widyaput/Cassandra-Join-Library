@@ -340,7 +340,7 @@ class JoinExecutor:
             self._execute_partition_join(join_type, right_table, join_column, next_join_column, all_partition_ids)
 
         else :
-            self._execute_join(left_table_rows, right_table_rows, join_type, right_table, join_column, next_join_column)
+            self._execute_direct_join(left_table_rows, right_table_rows, join_type, right_table, join_column, next_join_column)
 
         return
 
@@ -395,7 +395,7 @@ class JoinExecutor:
         return
     
     
-    def _execute_join(self, left_table_rows, right_table_rows, join_type, right_table, join_column, next_join_column):
+    def _execute_direct_join(self, left_table_rows, right_table_rows, join_type, right_table, join_column, next_join_column):
 
         session = self.session
 
@@ -445,35 +445,116 @@ class JoinExecutor:
         # Swap table boolean. Left table is build table by default
         should_swap_table = False
 
-        if (left_table_size < right_table_size):
+        if (left_table_size > right_table_size):
             # Build table is right table, so swap is mandatory
             should_swap_table = True
+            # Below might not be needed
+            intermediate_result.swap_build_and_probe()            
 
 
-        # Left table insertion to intermediate_result and clear left table rows for each iteration
-        for idx in range(len(left_table_rows)):
-            row = left_table_rows[idx]
+        # TODO: Change for Outer joins
 
-            # Left table is build table by default
-            is_build_table = True
-            if (should_swap_table):
+        if (not should_swap_table): # By default, process left table as Build table
+            # Left table insertion to intermediate_result and clear left table rows for each iteration
+            # Build table
+            for idx in range(len(left_table_rows)):
+                row = left_table_rows[idx]
+                left_key = row[join_column]
+
+                # Left table is build table by default
+                is_build_table = True
+                
+                # Use all rows to build hash table
+                intermediate_result.add_row_to_intermediate(row, is_build_table)
+                left_table_rows[idx] = None
+
+            # Right table insertion to intermediate_result and clear right table rows for each iteration
+            # Probe table
+            for idx in range(len(right_table_rows)):
+                row = right_table_rows[idx]
+                right_key = row[join_column]
+
+                # Right table is probe table by default
                 is_build_table = False
-                intermediate_result.swap_build_and_probe()
 
-            intermediate_result.add_row_to_intermediate(row, is_build_table)
-            left_table_rows[idx] = None
+                # Check if key exists in hash table. Action based on join type
+                is_key_exists = intermediate_result.is_key_in_hashtable(right_key)
 
-        # Right table insertion to intermediate_result and clear right table rows for each iteration
-        for idx in range(len(right_table_rows)):
-            row = right_table_rows[idx]
+                if (join_type == "INNER"):
+                    if (is_key_exists):
+                        intermediate_result.add_row_to_intermediate(row, is_build_table)
+                
+                elif (join_type == "LEFT_OUTER"):
+                    # We don't need non-matching rows from right table
+                    if (is_key_exists):
+                        intermediate_result.add_row_to_intermediate(row, is_build_table)
+                
+                elif (join_type == "RIGHT_OUTER"):
+                    # We need rows from right table, whether they match or not
+                    if (is_key_exists):
+                        intermediate_result.add_row_to_intermediate(row, is_build_table)
+                    else :
+                        intermediate_result.add_row_to_right_nomatch(row)
 
-            # Right table is probe table by default
-            is_build_table = False
-            if (should_swap_table):
+                else : # join_type == "FULL_OUTER"
+                    if (is_key_exists):
+                        intermediate_result.add_row_to_intermediate(row, is_build_table)
+                    else :
+                        intermediate_result.add_row_to_right_nomatch(row)
+
+                right_table_rows[idx] = None
+
+        else : # Process right table first as Build table
+            # Right table insertion to intermediate_result and clear right table rows for each iteration
+            # Build table
+            for idx in range(len(right_table_rows)):
+                row = right_table_rows[idx]
+                right_key = row[join_column]
+
+                # Now that the tables have been swap, right table is now a Build table
                 is_build_table = True
 
-            intermediate_result.add_row_to_intermediate(row, is_build_table)
-            right_table_rows[idx] = None
+                intermediate_result.add_row_to_intermediate(row, is_build_table)
+                right_table_rows[idx] = None
+
+            # Left table insertion to intermediate_result and clear left table rows for each iteration
+            # Probe table
+            for idx in range(len(left_table_rows)):
+                row = left_table_rows[idx]
+                left_key = row[join_column]
+
+                # Left table is build table by default
+                is_build_table = False
+
+                # Check if key exists in hash table. Action based on join type
+                is_key_exists = intermediate_result.is_key_in_hashtable(left_key)
+
+                if (join_type == "INNER"):
+                    if (is_key_exists):
+                        intermediate_result.add_row_to_intermediate(row, is_build_table)
+                
+                elif (join_type == "LEFT_OUTER"):
+                    # We need rows from left table, whether they match or not
+                    if (is_key_exists):
+                        intermediate_result.add_row_to_intermediate(row, is_build_table)
+                    else :
+                        intermediate_result.add_row_to_left_nomatch(row)
+                
+                elif (join_type == "RIGHT_OUTER"):
+                    # We don't need non-matching rows from right table
+                    if (is_key_exists):
+                        intermediate_result.add_row_to_intermediate(row, is_build_table)
+
+                else : # join_type == "FULL_OUTER"
+                    if (is_key_exists):
+                        intermediate_result.add_row_to_intermediate(row, is_build_table)
+                    else :
+                        intermediate_result.add_row_to_left_nomatch(row)
+
+
+                left_table_rows[idx] = None
+
+
 
         # Clear both left_table_rows and right_table_rows
         left_table_rows = None

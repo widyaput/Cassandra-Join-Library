@@ -3,6 +3,9 @@ from pympler import asizeof
 
 from utils import *
 
+global NULL_DATA
+NULL_DATA = None
+
 # Intermediate result for hash join
 class IntermediateDirectHashResult:
 
@@ -23,14 +26,38 @@ class IntermediateDirectHashResult:
         self.left_table_meta = join_info['left_columns']
         self.right_table_meta = join_info['right_columns']
 
+        # Build and Probe table matching with Left and Right table
         self.build = "L"
         self.probe = "R"
+
+        # Non-matching rows storage
+        self.no_match_left_rows = []
+        self.no_match_right_rows = []
     
 
     def swap_build_and_probe(self):
         self.build = "R"
         self.probe = "L"
 
+
+    def add_row_to_left_nomatch(self, row):
+        self.no_match_left_rows.append(row)
+        return
+
+    def add_row_to_right_nomatch(self, row):
+        self.no_match_right_rows.append(row)
+        return
+
+    def is_key_in_hashtable(self, key):
+        
+        if (key in self.hash_table):
+            return True
+
+        # Skip null or None values, return as True
+        if (key == "null" or key == None or key == "None"):
+            return True
+
+        return False
 
 
     def add_row_to_intermediate(self, row_dict, is_build):
@@ -39,7 +66,7 @@ class IntermediateDirectHashResult:
 
         key_value = row_dict[self.join_column]
 
-        if (key_value == "null" or key_value == None): 
+        if (key_value == "null" or key_value == None or key_value == "None"): 
             # Do not insert when value is null or none
             return
 
@@ -74,33 +101,33 @@ class IntermediateDirectHashResult:
 
         for key in self.hash_table:
             # Left list is ACTUALLY BUILD LIST
-            left_list = self.hash_table[key][0]
+            build_list = self.hash_table[key][0]
             # Right list is ACTUALLY PROBE LIST
-            right_list = self.hash_table[key][1]
+            probe_list = self.hash_table[key][1]
             
 
             # TODO: [VERY IMPORTANT] Do the join based on join_type
             if (self.join_type == "INNER"):
                 print("INNER")
-                if (len(left_list) == 0 or len(right_list) == 0):
+                if (len(build_list) == 0 or len(probe_list) == 0):
                     # No Result for current key
                     continue
             
             elif (self.join_type == "LEFT_OUTER"):
                 print("LEFT OUTER")
-                if ((len(left_list) == 0) and self.build == "L"):
+                if ((len(build_list) == 0) and self.build == "L"):
                     continue
 
-                if ((len(right_list) == 0) and self.build == "R"):
+                if ((len(probe_list) == 0) and self.build == "R"):
                     continue
 
             
             elif (self.join_type == "RIGHT_OUTER"):
                 print("RIGHT OUTER")
-                if ((len(right_list) == 0) and self.build == "L"):
+                if ((len(probe_list) == 0) and self.build == "L"):
                     continue
 
-                if ((len(left_list) == 0) and self.build == "R"):
+                if ((len(build_list) == 0) and self.build == "R"):
                     continue
 
             
@@ -108,15 +135,15 @@ class IntermediateDirectHashResult:
                 print("FULL OUTER")
 
 
-            for left_idx in range(len(left_list)):
-                left_item = left_list[left_idx]
+            for left_idx in range(len(build_list)):
+                left_item = build_list[left_idx]
                 
                 # Use merged_buffer when data should be divided
                 # merged_buffer = []
 
-                for right_idx in range(len(right_list)):
-                    right_item = right_list[right_idx]
-                    # Double checking real value (hash value already matched)
+                for right_idx in range(len(probe_list)):
+                    right_item = probe_list[right_idx]
+                    # Double checking real value (hash value already matched).
                     if (left_item[self.join_column] == right_item[self.join_column]):
                         merged = dict(list(left_item.items()) + list(right_item.items()))
 
@@ -134,9 +161,131 @@ class IntermediateDirectHashResult:
 
                         else :
                             result.append(merged)
-                
+
+            # Action when probe list is empty
+            if (len(probe_list) == 0):
+            # When no match found, still insert row to result if join type is OUTER
+                if (self.join_type == "INNER"):
+                    pass
+
+                elif (self.join_type == "LEFT_OUTER"):
+                    if (self.build == "L"):
+                        # Build dummy based on right table
+                        dummy_right = construct_null_columns(self.right_table_meta)
+
+                        merged_list = []
+                        for left_idx in range(len(build_list)):
+                            left_item = build_list[left_idx]
+                            merged = dict(list(left_item.items()) + list(dummy_right.items()))
+                            merged_list.append(merged)
+
+                        if (should_use_partition):
+                            row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                            partition_id = partition_id.union(row_partition_id)
+                        
+                        else :
+                            result = result + merged_list
+
+                    # When build is R, Flush no matching rows at the end
+
+                elif (self.join_type == "RIGHT_OUTER"):
+                    if (self.build == "R"):
+                        # Build dummy based on left table
+                        dummy_left = construct_null_columns(self.left_table_meta)
+
+                        merged_list = []
+                        for right_idx in range(len(build_list)):
+                            right_item = build_list[right_idx]
+                            merged = dict(list(right_item.items()) + list(dummy_left.items()))
+                            merged_list.append(merged)
+
+                        if (should_use_partition):
+                            row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                            partition_id = partition_id.union(row_partition_id)
+                        
+                        else :
+                            result = result + merged_list
+
+                    # When build is L, flush no matching rows at the end
+
+                    
                 # Preserve Memory
                 left_item[left_idx] = None
+
+
+        # Flush no matching rows
+        if (self.add_row_to_left_nomatch != [] or self.add_row_to_right_nomatch != []):
+            if (self.join_type == "LEFT_OUTER"):
+                if (self.build == "R"):
+                    dummy_right = construct_null_columns(self.right_table_meta)
+                    merged_list = []
+
+                    for row_idx in range(len(self.no_match_left_rows)):
+                        row = self.no_match_left_rows[row_idx]
+                        merged = dict(list(row.items()) + list(dummy_right.items()))
+                        merged_list.append(merged)
+
+                        # Preserve memory
+                        self.no_match_left_rows[row_idx] = None
+
+                    if (should_use_partition):
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                    
+                    else :
+                        result = result + merged_list
+                
+            elif (self.join_type == "RIGHT_OUTER"):
+                if (self.build == "L"):
+                    dummy_left = construct_null_columns(self.left_table_meta)
+                    merged_list = []
+
+                    for row_idx in range(len(self.no_match_right_rows)):
+                        row = self.no_match_right_rows[row_idx]
+                        merged = dict(list(row.items()) + list(dummy_left.items()))
+                        merged_list.append(merged)
+
+                        # Preserve memory
+                        self.no_match_right_rows[row_idx] = None
+
+                    if (should_use_partition):
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                    
+                    else :
+                        result = result + merged_list
+
+            else : # FULL OUTER
+                if (self.build == "R"):
+                    dummy_right = construct_null_columns(self.right_table_meta)
+                    merged_list = []
+
+                    for row_idx in range(len(self.no_match_left_rows)):
+                        row = self.no_match_left_rows[row_idx]
+                        merged = dict(list(row.items()) + list(dummy_right.items()))
+                        merged_list.append(merged)
+                        self.no_match_left_rows[row_idx] = None
+
+                    if (should_use_partition):
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                    
+                    else :
+                        result = result + merged_list
+
+                else :
+                    dummy_left = construct_null_columns(self.left_table_meta)
+                    merged_list = []
+
+                    for row_idx in range(len(self.no_match_right_rows)):
+                        row = self.no_match_right_rows[row_idx]
+                        merged = dict(list(row.items()) + list(dummy_left.items()))
+                        merged_list.append(merged)
+                        self.no_match_right_rows[row_idx] = None
+
+                    if (should_use_partition):
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                    
+                    else :
+                        result = result + merged_list
+
 
             # Remove after usage, maintain memory usage
             self.hash_table[key] = []
@@ -241,16 +390,16 @@ class IntermediatePartitionedHashResult:
 
                 # Do the join
                 for key in partition_hash_table:
-                    left_list = partition_hash_table[key][0]
-                    right_list = partition_hash_table[key][1]
+                    build_list = partition_hash_table[key][0]
+                    probe_list = partition_hash_table[key][1]
                     # Check if left list or right list is empty
 
-                    if ((left_list == None) or (right_list == None)):
+                    if ((build_list == None) or (probe_list == None)):
                         # Gives no result, continue to next key
                         continue
 
-                    for left_row in left_list:
-                        for right_row in right_list:
+                    for left_row in build_list:
+                        for right_row in probe_list:
                             # Compare for double checking equality
                             if (left_row[self.join_column] == right_row[self.join_column]):
                                 merged = dict(list(left_row.items()) + list(right_row.items()))
