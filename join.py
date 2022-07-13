@@ -68,7 +68,7 @@ class JoinExecutor:
     def leftJoin(self, right_table, join_column, join_column_right = None):
         # Append last
 
-        join_type = "LEFT"
+        join_type = "LEFT_OUTER"
         command = JoinCommand(join_type, right_table, join_column, join_column_right)
         self.command_queue.append(command)
 
@@ -78,7 +78,15 @@ class JoinExecutor:
     def rightJoin(self, right_table, join_column, join_column_right = None):
         # Append last
 
-        join_type = "RIGHT"
+        join_type = "RIGHT_OUTER"
+        command = JoinCommand(join_type, right_table, join_column, join_column_right)
+        self.command_queue.append(command)
+
+        return self
+
+    def fullOuterJoin(self,right_table, join_column, join_column_right = None):
+
+        join_type = "FULL_OUTER"
         command = JoinCommand(join_type, right_table, join_column, join_column_right)
         self.command_queue.append(command)
 
@@ -427,9 +435,6 @@ class JoinExecutor:
 
         intermediate_result = IntermediateDirectHashResult(join_info, self.max_data_size, next_join_column)
 
-        # TODO : Add rows to intermediate_result based on join type (Inner/ Outer)
-        # Also consider non equi-join
-
         # Convert result set as list
         left_table_rows = list(left_table_rows)
         right_table_rows = list(right_table_rows)
@@ -449,7 +454,8 @@ class JoinExecutor:
             # Build table is right table, so swap is mandatory
             should_swap_table = True
             # Below might not be needed
-            intermediate_result.swap_build_and_probe()            
+            intermediate_result.swap_build_and_probe()      
+            print("BUILD AND PROBE TABLE SWITCHED")      
 
 
         # TODO: Change for Outer joins
@@ -569,7 +575,7 @@ class JoinExecutor:
         new_left_table_column_names = left_table_column_names.union(right_table_column_names)
         self.current_result_column_names = new_left_table_column_names
 
-        print(f"JOIN with order num {self.join_order} completed with direct method")
+        print(f"{join_type} JOIN with order num {self.join_order} completed with direct method")
         print("\n\n")
 
         return

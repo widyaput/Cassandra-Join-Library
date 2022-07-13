@@ -17,7 +17,7 @@ def print_result_as_table(result):
         print("EMPTY RESULT SET")
         return
 
-    if (len(result) == 0):
+    if (result == []):
         print("EMPTY RESULT SET")
         return
 

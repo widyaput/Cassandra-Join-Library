@@ -34,10 +34,15 @@ session.row_factory = dict_factory
 start_time = time.time()
 # -------------------------- Start here --------------------------
 
+# join_result = JoinExecutor(session, keyspace_name, left_table) \
+#     .join(right_table, join_column) \
+#     .join(third_table, third_join_column) \
+#     .execute()
+
 join_result = JoinExecutor(session, keyspace_name, left_table) \
-    .join(right_table, join_column) \
-    .join(third_table, third_join_column) \
+    .fullOuterJoin(right_table, join_column) \
     .execute()
+
 
 print("\n\n")
 print_result_as_table(join_result)

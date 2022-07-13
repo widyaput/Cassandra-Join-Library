@@ -28,6 +28,9 @@ VALUES (1, 'rafi.adyatma@gmail.com', 450000, 'COMPLETE');
 INSERT INTO ecommerce.payment_received (payment_id, email, amount_paid, status) 
 VALUES (2, 'user2@bot.com', 1000, 'DELAYED');
 
+INSERT INTO ecommerce.payment_received (payment_id, email, amount_paid, status) 
+VALUES (3, 'outer_agent@bot.com', 7007, 'UNKNOWN');
+
 INSERT INTO ecommerce.user (userid, email, name) 
 VALUES (3, 'adnan.wick@yahoo.com', 'Adnan W');
 
