@@ -118,7 +118,6 @@ class IntermediateDirectHashResult:
                     continue
             
             elif (self.join_type == "LEFT_OUTER"):
-                print("LEFT OUTER")
                 if ((len(build_list) == 0) and self.build == "L"):
                     continue
 
@@ -127,7 +126,6 @@ class IntermediateDirectHashResult:
 
             
             elif (self.join_type == "RIGHT_OUTER"):
-                print("RIGHT OUTER")
                 if ((len(probe_list) == 0) and self.build == "L"):
                     continue
 
@@ -136,7 +134,7 @@ class IntermediateDirectHashResult:
 
             
             else : # join_type == FULL_OUTER
-                print("FULL OUTER")
+                pass
 
 
             for left_idx in range(len(build_list)):
@@ -387,38 +385,44 @@ class IntermediatePartitionedHashResult:
         right_partition = read_from_partition(join_order, partition_num, False)
 
         # Check if left partition or right partition is not found
-        if ((left_partition == None) or (right_partition == None)):
+        if ((left_partition == None) and (right_partition == None)):
             # Gives no result, return empty hash table immediately
             return {}
+
         print("\nLeft partition : ", left_partition)
+        print(f"Right partition : {right_partition}\n")
 
         # Process left table. Assume left table always be the Build Table
-        for left_row in left_partition:
-            # Convert string to JSON
-            left_row = json.loads(left_row[:-1])
+        if (left_partition != None):
+            for left_row in left_partition:
+                # Convert string to JSON
+                left_row = json.loads(left_row[:-1])
 
-            key = left_row[self.join_column]
-            if (key in partition_hash_table):
-                # There is already a key for that join column
-                partition_hash_table[key][0].append(left_row)
-            
-            else :
-                # Key is new for the hash table
-                partition_hash_table[key] = ([left_row],[])
+                key = left_row[self.join_column]
+                if (key in partition_hash_table):
+                    # There is already a key for that join column
+                    partition_hash_table[key][0].append(left_row)
+                
+                else :
+                    # Key is new for the hash table
+                    partition_hash_table[key] = ([left_row],[])
             
         
         # Process right table. Assume right table always be the Probe table
-        for right_row in right_partition:
-            # Convert string to JSON
-            right_row = json.loads(right_row[:-1])
+        if (right_partition != None):
+            for right_row in right_partition:
+                # Convert string to JSON
+                right_row = json.loads(right_row[:-1])
 
-            key = right_row[self.join_column]
-            if (key in partition_hash_table):
-                # There is already a key for that join column
-                partition_hash_table[key][1].append(right_row)
-            
-            else :
-                partition_hash_table[key][1] = ([],[right_row])
+                key = right_row[self.join_column]
+                if (key in partition_hash_table):
+                    # There is already a key for that join column
+                    partition_hash_table[key][1].append(right_row)
+                
+                else :
+                    partition_hash_table[key] = ([],[right_row])
+
+        print(f"Partition hash table : {partition_hash_table}")
 
         return partition_hash_table
 
@@ -427,6 +431,9 @@ class IntermediatePartitionedHashResult:
         join_order = self.join_order
 
         result_partition_ids = set()
+
+        print("Left meta : ", self.left_table_meta)
+        print("Right meta : ", self.right_table_meta)
         
         for partition_id in all_partitions:
             
@@ -437,38 +444,79 @@ class IntermediatePartitionedHashResult:
             partition_join_result = []
 
             # Do the partition join based on join type
-            if (self.join_type == "INNER"):
+            # In partition mode there is no build or probe, only left and right
 
-                # Do the join
-                for key in partition_hash_table:
-                    build_list = partition_hash_table[key][0]
-                    probe_list = partition_hash_table[key][1]
-                    # Check if left list or right list is empty
+            # Do the join
+            for key in partition_hash_table:
+                left_list = partition_hash_table[key][0]
+                right_list = partition_hash_table[key][1]
+                # Check if left list or right list is empty
 
-                    if ((build_list == None) or (probe_list == None)):
-                        # Gives no result, continue to next key
-                        continue
+                if ((left_list == None) and (right_list == None)):
+                    # Gives no result, continue to next key
+                    continue
+                    
+                
+                if (self.join_type == "LEFT_OUTER" and right_list == []):
+                    print("\nMasuk left outer")
+                    for left_row in left_list:
+                        dummy_right = construct_null_columns(self.right_table_meta)
+                        merged = dict(list(left_row.items()) + list(dummy_right.items()))
+                        merged[self.join_column] = left_row[self.join_column]
+                        partition_join_result.append(merged)
 
-                    for left_row in build_list:
-                        for right_row in probe_list:
+                elif (self.join_type == "RIGHT_OUTER" and left_list == []):
+                    print("\nMasuk right outer")
+                    for right_row in right_list:
+                        dummy_left = construct_null_columns(self.left_table_meta)
+                        merged = dict(list(right_row.items()) + list(dummy_left.items()))
+                        merged[self.join_column] = right_row[self.join_column]
+                        partition_join_result.append(merged)
+
+                elif (self.join_type == "FULL_OUTER"):
+                    print("\nMasuk fullouter bray")
+                    if (left_list == []):
+                        for right_row in right_list:
+                            dummy_left = construct_null_columns(self.left_table_meta)
+                            merged = dict(list(right_row.items()) + list(dummy_left.items()))
+                            merged[self.join_column] = right_row[self.join_column]
+                            partition_join_result.append(merged)
+
+                    elif (right_list == []) :
+                        for left_row in left_list:
+                            dummy_right = construct_null_columns(self.right_table_meta)
+                            merged = dict(list(left_row.items()) + list(dummy_right.items()))
+                            merged[self.join_column] = left_row[self.join_column]
+                            partition_join_result.append(merged)
+
+                    else :
+                        for left_row in left_list:
+                            for right_row in right_list:
+                                # Compare for double checking equality
+                                if (left_row[self.join_column] == right_row[self.join_column]):
+                                    merged = dict(list(left_row.items()) + list(right_row.items()))
+                                    partition_join_result.append(merged)
+
+                else :
+                    print(f"\nMasuknya else bray tapi join : {self.join_type}")
+                    for left_row in left_list:
+                        for right_row in right_list:
                             # Compare for double checking equality
                             if (left_row[self.join_column] == right_row[self.join_column]):
                                 merged = dict(list(left_row.items()) + list(right_row.items()))
                                 partition_join_result.append(merged)
-                    
-                # For each partition, flush into local disk
-                next_join_order = self.join_order + 1
 
-                print("Partition join result : ", partition_join_result)
 
-                result_hash_values = put_into_partition(partition_join_result, next_join_order, self.next_join_column, True)
+            # For each partition, flush into local disk
+            next_join_order = self.join_order + 1
 
-                # Merge partition ids with other ids
-                result_partition_ids = result_partition_ids.union(result_hash_values)
+            print(f"Partition join result : {partition_join_result}\n\n")
+
+            result_hash_values = put_into_partition(partition_join_result, next_join_order, self.next_join_column, True)
+
+            # Merge partition ids with other ids
+            result_partition_ids = result_partition_ids.union(result_hash_values)
             
-            else :
-                # TODO: Create for Left outer, Right outer, and Full outer join case
-                return []
 
         return result_partition_ids
         

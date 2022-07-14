@@ -48,7 +48,7 @@ class JoinExecutor:
         self.joins_info = []
 
         # To force use partition method
-        self.force_partition = False
+        self.force_partition = True
 
 
     def setLeftTable(self, table, column):
@@ -397,7 +397,7 @@ class JoinExecutor:
         new_left_table_column_names = left_table_column_names.union(right_table_column_names)
         self.current_result_column_names = new_left_table_column_names
 
-        print(f"JOIN with order num {self.join_order} completed with Partition Method")
+        print(f"{join_type} JOIN with order num {self.join_order} completed with Partition Method")
         print(f"Result partitions ID are : {result_partition_ids}\n\n")
 
         return
@@ -575,6 +575,7 @@ class JoinExecutor:
         new_left_table_column_names = left_table_column_names.union(right_table_column_names)
         self.current_result_column_names = new_left_table_column_names
 
+        print("\n")
         print(f"{join_type} JOIN with order num {self.join_order} completed with direct method")
         print("\n\n")
 

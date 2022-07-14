@@ -40,8 +40,10 @@ start_time = time.time()
 #     .execute()
 
 join_result = JoinExecutor(session, keyspace_name, left_table) \
-    .fullOuterJoin(right_table, join_column) \
+    .rightJoin(right_table, join_column) \
+    .rightJoin(third_table, third_join_column) \
     .execute()
+    # .leftJoin(third_table, third_join_column) 
 
 
 print("\n\n")
