@@ -7,100 +7,21 @@ from utils import *
 from math_utils import *
 
 from cassandra.query import dict_factory
+from join_executor import JoinExecutor
 
-class JoinExecutor:
+class HashJoinExecutor(JoinExecutor):
     def __init__(self, session, keyspace_name, table_name):
-        super().__init__()
-        # These attributes are about the DB from Cassandra
-        self.session = session
-        self.session.row_factory = dict_factory
-
-        self.keyspace = keyspace_name
-
-        # Saving current result for the join process
-        self.current_result = None
-        self.current_result_column_names = None
-
-        # Saving commands for Lazy execution
-        self.command_queue = []
-
-        # Set a left table as the join process is a deep left-join
-        self.left_table = table_name
-
-        # Saving queries for each table needs (Select and Where Query)
-        self.table_query = {}
-
+        super().__init__(session, keyspace_name, table_name)
+        
         # Saving partition ID for current join
         self.current_join_partition_ids = set()
 
-        # Set default select query on left_table
-        self.table_query[table_name] = f"SELECT * FROM {table_name}"
-
-        # Set join order to 1. Add 1 for every additional join command
-        self.join_order = 1
-        self.total_join_order = 1
-
-        # Set the maximum size of data (Byte) that can be placed into memory simultaneously
-        # Currently is set to 80% of available memory
-        self.max_data_size = int(0.8 * psutil.virtual_memory().available)
-
-        # Save all join information, this info will be used to execute join
-        self.joins_info = []
-
-        # To force use partition method
+        # Override force partition
         self.force_partition = True
 
 
-    def setLeftTable(self, table, column):
-        self.left_table = table
-        self.left_column = column
-
-
-    def join(self, right_table, join_column, join_column_right = None):
-        # Append last
-
-        join_type = "INNER"
-        command = JoinCommand(join_type, right_table, join_column, join_column_right)
-        self.command_queue.append(command)
-
-        return self
-
-    def leftJoin(self, right_table, join_column, join_column_right = None):
-        # Append last
-
-        join_type = "LEFT_OUTER"
-        command = JoinCommand(join_type, right_table, join_column, join_column_right)
-        self.command_queue.append(command)
-
-        return self
-
-
-    def rightJoin(self, right_table, join_column, join_column_right = None):
-        # Append last
-
-        join_type = "RIGHT_OUTER"
-        command = JoinCommand(join_type, right_table, join_column, join_column_right)
-        self.command_queue.append(command)
-
-        return self
-
-    def fullOuterJoin(self,right_table, join_column, join_column_right = None):
-
-        join_type = "FULL_OUTER"
-        command = JoinCommand(join_type, right_table, join_column, join_column_right)
-        self.command_queue.append(command)
-
-        return self
-
-
-    def select(self, table, column, condition):
-        # Append first
-        command = SelectCommand(table, column, condition)
-        self.command_queue.insert(0, command)
-
-        return self
-
     def execute(self):
+        # Inherited abstract method
         # Consume the commands queue, execute join
 
         session = self.session
@@ -578,15 +499,5 @@ class JoinExecutor:
         print("\n")
         print(f"{join_type} JOIN with order num {self.join_order} completed with direct method")
         print("\n\n")
-
-        return
-
-
-    def _should_use_tempfile(self):
-        
-        return 
-
-    
-    def _flush_to_local(self):
 
         return

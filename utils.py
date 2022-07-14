@@ -1,6 +1,8 @@
 import os
 import shutil
 import json
+
+from pympler import asizeof
 from tabulate import tabulate
 
 
@@ -125,6 +127,75 @@ def put_into_partition(data_page, join_order, join_column, is_left_table):
     # shutil.rmtree(tmp_folder_path)
 
     return hash_values_set
+
+
+def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_partition_id, is_left_table):
+    partition_data = []
+
+    last_partition_size = 0
+
+    cwd = os.getcwd()
+    tmp_folder_name = "tmpfolder"
+
+    tmp_folder_path = os.path.join(cwd, tmp_folder_name)
+
+    if (not os.path.isdir(tmp_folder_path)):
+        os.mkdir(tmp_folder_path)
+
+    iter_path = os.path.join(tmp_folder_path, str(join_order))
+
+    if (not os.path.isdir(iter_path)):
+        os.mkdir(iter_path)
+
+    if (last_partition_id != -1):
+        last_partition_name = str(last_partition_id)
+        if (is_left_table):
+            last_partition_name += "_l.txt"
+
+        else :
+            last_partition_name += "_r.txt"
+
+        # Check size of last partition
+        last_partition_path = os.path.join(iter_path, last_partition_name)
+        last_partition_size = os.path.getsize(last_partition_path)
+
+
+    # Make partition
+    for data_idx in range(len(data_page)):
+        row = data_page[data_idx]
+        partition_data.append(row)
+        
+        # Clear row to maintain memoru usage
+        data_page[data_idx] = None
+
+        if (asizeof.asizeof(partition_data) + last_partition_size >= max_partition_size):
+            # Flush into partition
+            new_last_partition_id = last_partition_id + 1
+            new_last_partition_name = str(new_last_partition_id)
+
+            if (is_left_table):
+                new_last_partition_name += "_l.txt"
+            
+            else :
+                new_last_partition_name += "_r.txt"
+
+            new_last_partition_path = os.path.join(iter_path, new_last_partition_name)
+
+            # File operation
+            f = open(new_last_partition_path, mode='a')
+            f.write(json.dumps(partition_data))
+            f.close()
+
+            # Increment last partition id and reset partition size
+            last_partition_id = new_last_partition_id
+            if (last_partition_size != 0):
+                last_partition_size = 0
+
+            pass
+
+
+    return last_partition_id
+
 
 
 def empty_table_guard(dataset):

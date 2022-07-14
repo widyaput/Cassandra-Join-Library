@@ -5,7 +5,7 @@ from cassandra.query import dict_factory
 from cassandra.metadata import TableMetadata, ColumnMetadata
 
 from utils import *
-from join import *
+from hash_join import *
 
 cluster = Cluster()
 
@@ -34,14 +34,14 @@ session.row_factory = dict_factory
 start_time = time.time()
 # -------------------------- Start here --------------------------
 
-# join_result = JoinExecutor(session, keyspace_name, left_table) \
+# join_result = HashJoinExecutor(session, keyspace_name, left_table) \
 #     .join(right_table, join_column) \
 #     .join(third_table, third_join_column) \
 #     .execute()
 
-join_result = JoinExecutor(session, keyspace_name, left_table) \
-    .rightJoin(right_table, join_column) \
-    .rightJoin(third_table, third_join_column) \
+join_result = HashJoinExecutor(session, keyspace_name, left_table) \
+    .fullOuterJoin(right_table, join_column) \
+    .fullOuterJoin(third_table, third_join_column) \
     .execute()
     # .leftJoin(third_table, third_join_column) 
 
