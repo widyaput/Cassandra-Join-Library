@@ -247,6 +247,8 @@ class HashJoinExecutor(JoinExecutor):
         # Get right table data
         right_table_rows, is_right_table_in_partitions, right_partition_ids = self._get_right_data(right_table, join_column, is_left_table_in_partitions)
 
+        
+
         # Check size
         if ((not is_left_table_in_partitions) and (not is_right_table_in_partitions)):
             if (self.max_data_size <= (asizeof.asizeof(left_table_rows) + asizeof.asizeof(right_table_rows))):

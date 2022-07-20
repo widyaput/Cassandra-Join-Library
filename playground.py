@@ -1,4 +1,5 @@
 import time
+from pympler import asizeof
 from tabulate import tabulate
 from cassandra.cluster import Cluster
 from cassandra.query import dict_factory
@@ -10,6 +11,8 @@ import shutil
 
 # User import
 from utils import *
+from file_utils import *
+from join_executor import *
 
 
 
@@ -53,12 +56,30 @@ dummy_data_per_iteration = [
 
 t1 = time.time()
 
-put_into_partition(dummy_data_per_iteration, 1, "ID")
-put_into_partition(dummy_data_per_iteration, 2, "ID")
-put_into_partition(dummy_data_per_iteration, 3, "ID")
-put_into_partition(dummy_data_per_iteration, 4, "ID")
-put_into_partition(dummy_data_per_iteration, 5, "ID")
-put_into_partition(dummy_data_per_iteration, 6, "ID")
+the_data = [
+    [{
+        ("ID", "user") : 4,
+        ("Name", "user") : "Rafi Adyatma",
+        ("Email", "user") : "rafi.adyatma@gmail.com",
+        ("Name", "item") : "Long Sword"
+    },0],
+    [{
+        ("ID", "user") : 4,
+        ("Name", "user") : "Rafi Adyatma",
+        ("Email", "user") : "rafi.adyatma@gmail.com",
+        ("Name", "item") : "Long Sword"
+    },0]
+]
+
+print("Original data : ", the_data, "\n")
+
+json_accepted_data = jsonTupleKeyEncoder(the_data)
+the_json = json.dumps(json_accepted_data)
+
+read_json = json.loads(the_json)
+print("Readed json : ", read_json, "\n")
+revert_data = jsonTupleKeyDecoder(read_json)
+print("Reverted data : ", revert_data, "\n")
 
 t2 = time.time()
 print("Execution Time : ", t2-t1)

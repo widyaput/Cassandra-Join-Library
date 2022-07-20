@@ -1,3 +1,5 @@
+SELECT * FROM system_schema.columns where keyspace_name = 'ecommerce' AND table_name = 'user';
+
 CREATE TABLE
 
 CREATE TABLE payment_received (

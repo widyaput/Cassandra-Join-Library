@@ -5,6 +5,8 @@ import json
 from pympler import asizeof
 from tabulate import tabulate
 
+from file_utils import *
+
 
 # K is the biggest prime in the first million
 global K
@@ -82,6 +84,46 @@ def read_from_partition(join_order, partition_id, is_build):
     data = f.readlines()
 
     print("READ FROM PARTITION RESULT : ", data)
+
+    return data
+
+
+def read_from_partition_nonhash(join_order, partition_id, is_left_table):
+    cwd = os.getcwd()
+    tmp_folder = "tmpfolder"
+
+    tmp_folder_path = os.path.join(cwd, tmp_folder)
+
+    if (not os.path.isdir(tmp_folder_path)):
+        print("No TmpFolder detected!")
+    
+    iter_path = os.path.join(tmp_folder_path, str(join_order))
+
+    partition_path = None
+    partition_name = None
+    if (is_left_table):
+        partition_name = str(partition_id) + "_l.txt"
+        partition_path = os.path.join(iter_path, partition_name)
+
+    else : # Right table
+        partition_name = str(partition_id) + "_r.txt"
+        partition_path = os.path.join(iter_path, partition_name)
+
+    # File not found check
+    if (not os.path.isfile(partition_path)):
+        print(f"Partition {partition_name} from Join Order : {join_order} is not found!")
+        return None
+
+    f = open(partition_path, 'r')
+    data = f.readlines()
+
+    # Reformat data
+    for idx in range(len(data)):
+        curr_data = data[idx]
+        print(curr_data[:-1])
+        data[idx] = json.loads(curr_data[:-1])
+
+    data = jsonTupleKeyDecoder(data)
 
     return data
 
@@ -168,6 +210,7 @@ def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_p
         # Clear row to maintain memoru usage
         data_page[data_idx] = None
 
+        # TODO: THE PROBLEM IS HERE. MAX PARTITION SIZE IS TOO BIG FOR SMALL TEST CASE
         if (asizeof.asizeof(partition_data) + last_partition_size >= max_partition_size):
             # Flush into partition
             new_last_partition_id = last_partition_id + 1
@@ -181,21 +224,95 @@ def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_p
 
             new_last_partition_path = os.path.join(iter_path, new_last_partition_name)
 
+            # Convert data to json accepted format
+            partition_data = jsonTupleKeyEncoder(partition_data)
+
             # File operation
             f = open(new_last_partition_path, mode='a')
-            f.write(json.dumps(partition_data))
+
+            # Write data here
+            for row in partition_data:
+                f.write(json.dumps(row)+"\n")
+
             f.close()
+
+            # Empty the partition data
+            partition_data = []
 
             # Increment last partition id and reset partition size
             last_partition_id = new_last_partition_id
             if (last_partition_size != 0):
                 last_partition_size = 0
 
-            pass
+        
+    # Force flush partition
+    new_last_partition_id = last_partition_id + 1
+    new_last_partition_name = str(new_last_partition_id)
 
+    if (is_left_table):
+        new_last_partition_name += "_l.txt"
+
+    else :
+        new_last_partition_name += "_r.txt"
+
+    new_last_partition_path = os.path.join(iter_path, new_last_partition_name)
+
+    # Convert data to json accepted format
+    partition_data = jsonTupleKeyEncoder(partition_data)
+
+    f = open(new_last_partition_path, mode='a')
+    # Write data here
+    for row in partition_data:
+        f.write(json.dumps(row)+"\n")
+    f.close()
+
+    partition_data = []
+    
+    # Increment last partition id
+    last_partition_id = new_last_partition_id
 
     return last_partition_id
 
+
+def update_partition_nonhash(partition_data, join_order, partition_id, is_left_table):
+
+    cwd = os.getcwd()
+
+    tmp_folder_name = "tmpfolder"
+    tmp_folder_path = os.path.join(cwd, tmp_folder_name)
+
+    iter_path = os.path.join(tmp_folder_path, str(join_order))
+
+    partition_name = str(partition_id)
+
+    if (is_left_table):
+        partition_name += "_l.txt"
+
+    else:
+        partition_name += "_r.txt"
+
+    partition_path = os.path.join(iter_path, partition_name)
+
+    if (not os.path.exists(partition_path)):
+        if (is_left_table):
+            print(f"Left Partition {partition_id} on Join order {join_order} cannot be found!")
+        else:
+            print(f"Right Partition {partition_id} on Join order {join_order} cannot be found!")
+        
+        return False
+
+
+    # Convert data
+    partition_data = jsonTupleKeyEncoder(partition_data)
+
+    # Open partition and update (re-write) partition
+    f = open(partition_path, mode='w')
+
+    for row in partition_data:
+        f.write(json.dumps(row)+"\n")
+    f.close()
+
+    return True
 
 
 def empty_table_guard(dataset):
@@ -247,10 +364,11 @@ def get_column_names_from_local(join_order, partition_ids):
     return column_names
 
 
-def construct_null_columns(column_names):
+def construct_null_columns(table_name, column_names):
 
     null_columns = {}
     for col_name in column_names:
-        null_columns[col_name] = None
+        key = (col_name, table_name)
+        null_columns[key] = None
 
     return null_columns

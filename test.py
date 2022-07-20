@@ -6,16 +6,17 @@ from cassandra.metadata import TableMetadata, ColumnMetadata
 
 from utils import *
 from hash_join import *
+from tuple_join import *
 
 cluster = Cluster()
 
 # Keyspace, Table and Join Column Information
 keyspace_name = 'ecommerce'
-left_table = "user"
-right_table = "payment_received"
+table1 = "user"
+table2 = "payment_received"
 join_column = "email"
 
-third_table = "user_item_like"
+table3 = "user_item_like"
 third_join_column = "userid"
 
 session = cluster.connect(keyspace_name)
@@ -39,15 +40,24 @@ start_time = time.time()
 #     .join(third_table, third_join_column) \
 #     .execute()
 
-join_result = HashJoinExecutor(session, keyspace_name, left_table) \
-    .fullOuterJoin(right_table, join_column) \
-    .fullOuterJoin(third_table, third_join_column) \
+
+# join_result = TupleJoinExecutor(session, keyspace_name) \
+#     .rightJoin(table1, join_column, "=", table2, join_column) \
+#     .leftJoin(table1, third_join_column, "=", table3) \
+#     .execute()
+
+join_result = TupleJoinExecutor(session, keyspace_name) \
+    .leftJoin(table1, join_column, "=", table2, join_column) \
     .execute()
-    # .leftJoin(third_table, third_join_column) 
 
 
 print("\n\n")
-print_result_as_table(join_result)
+# print_result_as_table(join_result)
+total_rows = 0
+for row in join_result:
+    print(row)
+    total_rows += 1
+print("Rows : ", total_rows)
 print("\n\n")
 
 

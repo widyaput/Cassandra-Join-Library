@@ -1,0 +1,8 @@
+{"data": {"userid": {"user": 5}, "email": {"user": "fuad.adaki@gmail.com"}, "name": {"user": "Farid Adika"}}, "flag": 0}
+{"data": {"userid": {"user": 1}, "email": {"user": "rafi.adyatma@gmail.com"}, "name": {"user": "Rafi Adyatma"}}, "flag": 1}
+{"data": {"userid": {"user": 8}, "email": {"user": "khalwa_ernest@gmail.com"}, "name": {"user": "Khalwa Ernest"}}, "flag": 0}
+{"data": {"userid": {"user": 2}, "email": {"user": "user2@bot.com"}, "name": {"user": null}}, "flag": 1}
+{"data": {"userid": {"user": 4}, "email": {"user": "rio.aditia@paboi.com"}, "name": {"user": "Rio Aditia"}}, "flag": 0}
+{"data": {"userid": {"user": 7}, "email": {"user": "faskal.rama@gmail.com"}, "name": {"user": "Faskal Rama"}}, "flag": 0}
+{"data": {"userid": {"user": 6}, "email": {"user": "putri.devi@gmail.com"}, "name": {"user": "Putri Devi"}}, "flag": 0}
+{"data": {"userid": {"user": 3}, "email": {"user": "adnan.wick@yahoo.com"}, "name": {"user": "Adnan W"}}, "flag": 0}

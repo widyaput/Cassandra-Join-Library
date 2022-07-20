@@ -10,7 +10,7 @@ from cassandra.query import dict_factory
 
 
 class JoinExecutor(ABC):
-    def __init__(self, session, keyspace_name, table_name):
+    def __init__(self, session, keyspace_name):
         # These attributes are about the DB from Cassandra
         self.session = session
         self.session.row_factory = dict_factory
@@ -20,13 +20,14 @@ class JoinExecutor(ABC):
         self.command_queue = []
 
         # Set a left table as the join process is a deep left-join
-        self.left_table = table_name
+        self.left_table = "EMPTY"
 
         # Saving queries for each table needs (Select and Where Query)
         self.table_query = {}
 
         # Set default select query on left_table
-        self.table_query[table_name] = f"SELECT * FROM {table_name}"
+        # self.table_query[table_name] = f"SELECT * FROM {table_name}"
+        self.table_query = {}
 
         # Set join order to 1. Add 1 for every additional join command
         self.join_order = 1
@@ -43,39 +44,42 @@ class JoinExecutor(ABC):
         # Save all join information, this info will be used to execute join
         self.joins_info = []
 
+        # Save all metadata about join tables
+        self.join_metadata = JoinMetadata()
+
         # To force use partition method
         self.force_partition = False
 
 
-    def join(self, right_table, join_column, join_column_right = None):
+    def join(self, left_table, join_column, join_operator, right_table, join_column_right = None):
         # Append last
 
         join_type = "INNER"
-        command = JoinCommand(join_type, right_table, join_column, join_column_right)
+        command = JoinCommand(join_type, left_table, join_column, right_table, join_column_right)
         self.command_queue.append(command)
 
         return self
 
-    def leftJoin(self, right_table, join_column, join_column_right = None):
+    def leftJoin(self, left_table, join_column, join_operator, right_table, join_column_right = None):
         # Inherited method
 
         join_type = "LEFT_OUTER"
-        command = JoinCommand(join_type, right_table, join_column, join_column_right)
+        command = JoinCommand(join_type, left_table, join_column, right_table, join_column_right)
         self.command_queue.append(command)
 
         return self
 
 
-    def rightJoin(self, right_table, join_column, join_column_right = None):
+    def rightJoin(self, left_table, join_column, join_operator, right_table, join_column_right = None):
         # Inherited method
 
         join_type = "RIGHT_OUTER"
-        command = JoinCommand(join_type, right_table, join_column, join_column_right)
+        command = JoinCommand(join_type, left_table, join_column, right_table, join_column_right)
         self.command_queue.append(command)
 
         return self
 
-    def fullOuterJoin(self,right_table, join_column, join_column_right = None):
+    def fullOuterJoin(self, join_column, join_operator, right_table, join_column_right = None):
         # Inherited method
 
         join_type = "FULL_OUTER"
@@ -96,3 +100,55 @@ class JoinExecutor(ABC):
     @abstractmethod
     def execute(self):
         pass
+
+
+class JoinMetadata:
+    def __init__(self):
+        super().__init__()
+        self.tables = set()
+
+        # Columns would be dict, key is table name and values are column names
+        self.columns = {}
+
+    def add_table(self, table_name):
+        if (self.is_table_exists(table_name)):
+            return
+
+        self.tables.add(table_name)
+
+        if (not table_name in self.columns):
+            # Columns of table saved in LIST
+            self.columns[table_name] = []
+
+    def is_table_exists(self, table_name):
+        if (table_name in self.tables):
+            return True
+
+        return False
+
+    def add_many_columns(self, table_name, columns):
+        for col in columns:
+            self.columns[table_name].append(col)
+        
+        return
+
+    def add_one_column(self, table_name, column_name):
+        self.columns[table_name].append(column_name)
+        return
+
+    def is_column_exists(self, table_name, column_name):
+        if (not table_name in self.columns):
+            return False
+        
+        if (not column_name in self.columns[table_name]):
+            return False
+        
+        return True
+    
+    def get_columns_of_table(self, table_name):
+        return self.columns[table_name]
+
+    
+    def get_size(self):
+
+        return asizeof.asizeof(self)
