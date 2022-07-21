@@ -84,7 +84,7 @@ class TupleJoinExecutor(JoinExecutor):
                 if (not left_table in self.table_query):
                     self.table_query[left_table] = f"SELECT * FROM {left_table}"
 
-                # Below are action for Right table 
+                # Below are actions for Right table 
                 if (not is_righttable_in_metadata):
                     right_meta_rows = session.execute(check_rightcols_query)
                     self.join_metadata.add_table(right_table)
@@ -93,7 +93,7 @@ class TupleJoinExecutor(JoinExecutor):
                         column_name = row['column_name']
                         self.join_metadata.add_one_column(right_table, column_name)
 
-
+                # No join columns exception here
                 table_cols = self.join_metadata.get_columns_of_table(right_table)
                 if not(join_column_right in table_cols):
                     # Throw error
@@ -173,7 +173,6 @@ class TupleJoinExecutor(JoinExecutor):
 
 
         # Build final result here
-        # TODO: Change code below for tuple join
         if (self.current_result == []): # Final result is in disk
             # For now, merge all results to memory
             final_result = []

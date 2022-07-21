@@ -8,6 +8,8 @@ from utils import *
 from hash_join import *
 from tuple_join import *
 
+from file_utils import *
+
 cluster = Cluster()
 
 # Keyspace, Table and Join Column Information
@@ -35,6 +37,11 @@ session.row_factory = dict_factory
 start_time = time.time()
 # -------------------------- Start here --------------------------
 
+join_result = HashJoinExecutor(session, keyspace_name) \
+    .fullOuterJoin(table1, join_column, "=", table2, join_column) \
+    .rightJoin(table1, third_join_column, "=", table3) \
+    .execute()
+
 # join_result = HashJoinExecutor(session, keyspace_name, left_table) \
 #     .join(right_table, join_column) \
 #     .join(third_table, third_join_column) \
@@ -46,18 +53,20 @@ start_time = time.time()
 #     .leftJoin(table1, third_join_column, "=", table3) \
 #     .execute()
 
-join_result = TupleJoinExecutor(session, keyspace_name) \
-    .leftJoin(table1, join_column, "=", table2, join_column) \
-    .execute()
+# join_result = TupleJoinExecutor(session, keyspace_name) \
+#     .fullOuterJoin(table1, join_column, "=", table2, join_column) \
+#     .execute()
 
 
 print("\n\n")
-# print_result_as_table(join_result)
-total_rows = 0
-for row in join_result:
-    print(row)
-    total_rows += 1
-print("Rows : ", total_rows)
+# For tuple Join
+# join_result = printableTupleKeyDecoder(join_result)
+
+# For hash join
+join_result = printableHashJoinDecoder(join_result)
+
+print_result_as_table(join_result)
+
 print("\n\n")
 
 

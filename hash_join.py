@@ -10,8 +10,8 @@ from cassandra.query import dict_factory
 from join_executor import JoinExecutor
 
 class HashJoinExecutor(JoinExecutor):
-    def __init__(self, session, keyspace_name, table_name):
-        super().__init__(session, keyspace_name, table_name)
+    def __init__(self, session, keyspace_name):
+        super().__init__(session, keyspace_name)
         
         # Saving partition ID for current join
         self.current_join_partition_ids = set()
@@ -50,6 +50,7 @@ class HashJoinExecutor(JoinExecutor):
                 
                 # Define join variables
                 join_type = join_command.join_type
+                left_table = join_command.left_table
                 right_table = join_command.right_table
                 join_column = join_command.join_column
                 join_column_right = join_command.join_column_right
@@ -60,13 +61,35 @@ class HashJoinExecutor(JoinExecutor):
                 # Checking whether if join column is exist
                 table_cols = []
 
-                check_cols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{right_table}'"
+                is_lefttable_in_metadata = self.join_metadata.is_table_exists(left_table)
+                is_righttable_in_metadata = self.join_metadata.is_table_exists(right_table)
 
-                meta_rows = session.execute(check_cols_query)
-                
-                for row in meta_rows:
-                    table_cols.append(row['column_name'])
+
+                check_leftcols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{left_table}'"
+                check_rightcols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{right_table}'"
+
+                if (not is_lefttable_in_metadata):
+                    left_meta_rows = session.execute(check_leftcols_query)
+                    self.join_metadata.add_table(left_table)
+
+                    for row in left_meta_rows:
+                        column_name = row['column_name']
+                        self.join_metadata.add_one_column(left_table, column_name)
         
+                if (not left_table in self.table_query):
+                    self.table_query[left_table] = f"SELECT * FROM {left_table}"
+
+                # Below are actions for Right table
+                if (not is_righttable_in_metadata):
+                    right_meta_rows = session.execute(check_rightcols_query)
+                    self.join_metadata.add_table(right_table)
+
+                    for row in right_meta_rows:
+                        column_name = row['column_name']
+                        self.join_metadata.add_one_column(right_table, column_name)
+
+                
+                table_cols = self.join_metadata.get_columns_of_table(right_table)
                 if not(join_column_right in table_cols):
                     # Throw error
                     print("Join column is not in right-table")
@@ -79,11 +102,12 @@ class HashJoinExecutor(JoinExecutor):
                     col = table_cols[idx]
 
                     # Column naming
-                    if (col == join_column_right):
-                        select_query += f" {join_column_right} AS {join_column}"
-                    else :
-                        select_query += f" {col}"
+                    # if (col == join_column_right):
+                    #     select_query += f" {join_column_right} AS {join_column}"
+                    # else :
+                    #     select_query += f" {col}"
                     
+                    select_query += f" {col}"
 
                     # End of each column select
                     if (idx != len(table_cols) - 1):
@@ -100,11 +124,14 @@ class HashJoinExecutor(JoinExecutor):
                 else :
                     self.table_query[right_table] = select_query
 
+
                 curr_join_info = {
-                    "join_order" : self.join_order,
+                    "join_order" : self.total_join_order,
                     "join_type" : join_type,
+                    "left_table" : left_table,
                     "right_table" : right_table,
-                    "join_column" : join_column
+                    "join_column" : join_column,
+                    "join_column_right" : join_column_right
                 }
 
                 self.total_join_order += 1
@@ -123,16 +150,21 @@ class HashJoinExecutor(JoinExecutor):
 
             # Next join column will be used to partition the result of current join
             # So that they can be used directly for the next join
+            next_join_table = None
             next_join_column = None
             if (join_info_idx == (len(self.joins_info) - 1)):
                 # Current join is the final join
-                next_join_column = None
+                next_join_table = self.joins_info[join_info_idx]['left_table']
+                next_join_column = self.joins_info[join_info_idx]['join_column']
 
             else :
+                next_join_table = self.joins_info[join_info_idx]['left_table']
                 next_join_column = self.joins_info[join_info_idx+1]['join_column']
 
+            next_join_info = (next_join_column, next_join_table)
+
             # Join preparation has been prepared, now continue to execute_join
-            self._decide_join(join_type, right_table, join_column, next_join_column)
+            self._decide_join(join_info, next_join_info)
             # or execute partitioned-join
 
             # Increment join_order num
@@ -152,8 +184,6 @@ class HashJoinExecutor(JoinExecutor):
                 # Read data
                 partition_data = read_from_partition(final_join_order, id, True)
                 for row in partition_data:
-                    # Convert to JSON then add to final result
-                    row = json.loads(row[:-1])
                     final_result.append(row)
 
             # TODO: Delete all tmpfiles after join operation
@@ -164,7 +194,7 @@ class HashJoinExecutor(JoinExecutor):
 
             return self.current_result
 
-    def _get_left_data(self, join_column):
+    def _get_left_data(self, left_table, join_column):
         session = self.session
 
         left_table_rows = None
@@ -173,11 +203,25 @@ class HashJoinExecutor(JoinExecutor):
 
         # Read data
         if (self.join_order == 1): # First join, all data are in Cassandra
-            left_table_query = self.table_query[self.left_table]
+            left_table_query = self.table_query[left_table]
             print("Left-Table query : ", left_table_query)
 
             # TODO: Use paging and async
             left_table_rows = session.execute(left_table_query)
+            left_table_rows = list(left_table_rows)
+
+            # Change the row structure
+            for idx in range(len(left_table_rows)):
+                left_row = left_table_rows[idx]
+
+                tupled_key_dict = {}
+                for key in left_row:
+                    value = left_row[key]
+                    new_key = (key, left_table)
+                    tupled_key_dict[new_key] = value
+                
+                left_table_rows[idx] = tupled_key_dict
+
 
 
         else : # Non first join, left table may in self.current_result or in partitions
@@ -203,9 +247,9 @@ class HashJoinExecutor(JoinExecutor):
         if ((self.max_data_size <= asizeof.asizeof(left_table_rows)) or self.force_partition): 
             # Left table is bigger than max data size in memory, use partition
             is_data_in_partitions = True
-            
+
             # Flush left table
-            partition_ids = put_into_partition(left_table_rows, self.join_order, join_column, True)
+            partition_ids = put_into_partition(left_table_rows, self.join_order, left_table, join_column, True)
             left_table_rows = None
 
         return left_table_rows, is_data_in_partitions, partition_ids
@@ -224,6 +268,20 @@ class HashJoinExecutor(JoinExecutor):
 
         # TODO: Use paging and async
         right_table_rows = session.execute(right_table_query)
+        right_table_rows = list(right_table_rows)
+
+        # Change the row structure to a tupled-key dict
+        for idx in range(len(right_table_rows)):
+            right_row = right_table_rows[idx]
+
+            tupled_key_dict = {}
+            for key in right_row:
+                value = right_row[key]
+                new_key = (key, right_table)
+                tupled_key_dict[new_key] = value
+            
+            right_table_rows[idx] = tupled_key_dict
+
 
         # SIZE CHECKING
         if (((self.max_data_size <= asizeof.asizeof(right_table_rows)) or (is_left_table_partitioned)) or self.force_partition): 
@@ -231,21 +289,30 @@ class HashJoinExecutor(JoinExecutor):
             is_data_in_partitions = True
             
             # Flush right table
-            partition_ids = put_into_partition(right_table_rows, self.join_order, join_column, False)
+            partition_ids = put_into_partition(right_table_rows, self.join_order, right_table, join_column, False)
             right_table_rows = None
 
         return right_table_rows, is_data_in_partitions, partition_ids
 
 
-    def _decide_join(self, join_type, right_table, join_column, next_join_column):
+    def _decide_join(self, join_info, next_join_info):
         # Try to load data first in here, then decide how the join will be implemented
         # Directly or Partitioned
+        next_join_column = next_join_info[0]
+        next_join_table = next_join_info[1]
+
+        left_table = join_info['left_table']
+        right_table = join_info['right_table']
+
+        join_column = join_info['join_column']
+        join_column_right = join_info['join_column_right']
+
 
         # Get Left table data
-        left_table_rows, is_left_table_in_partitions, left_partition_ids = self._get_left_data(join_column)
+        left_table_rows, is_left_table_in_partitions, left_partition_ids = self._get_left_data(left_table, join_column)
 
         # Get right table data
-        right_table_rows, is_right_table_in_partitions, right_partition_ids = self._get_right_data(right_table, join_column, is_left_table_in_partitions)
+        right_table_rows, is_right_table_in_partitions, right_partition_ids = self._get_right_data(right_table, join_column_right, is_left_table_in_partitions)
 
         
 
@@ -253,8 +320,8 @@ class HashJoinExecutor(JoinExecutor):
         if ((not is_left_table_in_partitions) and (not is_right_table_in_partitions)):
             if (self.max_data_size <= (asizeof.asizeof(left_table_rows) + asizeof.asizeof(right_table_rows))):
                 # Flush both tables
-                left_partition_ids = put_into_partition(left_table_rows, self.join_order, join_column, True)
-                right_partition_ids = put_into_partition(right_table_rows, self.join_order, join_column, False)
+                left_partition_ids = put_into_partition(left_table_rows, self.join_order, left_table, join_column, True)
+                right_partition_ids = put_into_partition(right_table_rows, self.join_order, right_table, join_column, False)
 
                 is_left_table_in_partitions = True
                 is_right_table_in_partitions = True
@@ -268,44 +335,46 @@ class HashJoinExecutor(JoinExecutor):
             print("Right partition ids : ", right_partition_ids)
             print("Merged Partition ids : ", all_partition_ids)
 
-            self._execute_partition_join(join_type, right_table, join_column, next_join_column, all_partition_ids)
+            self._execute_partition_join(join_info, next_join_info, all_partition_ids)
 
         else :
-            self._execute_direct_join(left_table_rows, right_table_rows, join_type, right_table, join_column, next_join_column)
+            self._execute_direct_join(left_table_rows, right_table_rows, join_info, next_join_info)
 
         return
 
 
-    def _execute_partition_join(self, join_type, right_table, join_column, next_join_column, partition_ids):
+    def _execute_partition_join(self, join_info, next_join_info, partition_ids):
+        next_join_column = next_join_info[0]
+        next_join_table = next_join_info[1]
 
-        # Check whether current result is available
-        join_info = {
-            "join_order" : self.join_order,
-            "join_column" : join_column,
-            "join_type" : join_type,
-            "left_columns" : set(),
-            "right_columns" : set() 
-        }
+        # Breakdown the join_info
+        join_type = join_info['join_type']
+        left_table = join_info['left_table']
+        right_table = join_info['right_table']
+        join_column = join_info['join_column']
+        join_column_right = join_info['join_column_right']
 
         # Get metadata
         left_table_column_names = None
         right_table_column_names = None
 
-        # First join order always get column names from Cassandra
+        # First join order always get column names from Cassandra [MIGHT BE DELETED]
         if (self.join_order == 1):
-            left_table_column_names = get_column_names_from_db(self.session, self.keyspace, self.left_table)
+            left_table_column_names = get_column_names_from_db(self.session, self.keyspace, left_table)
 
 
         else :
             left_table_column_names = self.current_result_column_names
 
-        right_table_column_names = get_column_names_from_db(self.session, self.keyspace, right_table)
+        
+        left_table_column_names = self.join_metadata.get_columns_of_table(left_table)
+        right_table_column_names = self.join_metadata.get_columns_of_table(right_table)
 
-        # Add column names to join_info
+        # Add column names to join_info [MIGHT BE DELETED]
         join_info['left_columns'] = left_table_column_names
         join_info['right_columns'] = right_table_column_names
 
-        intermediate_result = IntermediatePartitionedHashResult(join_info, self.max_data_size, next_join_column)
+        intermediate_result = IntermediatePartitionedHashResult(join_info, self.max_data_size, next_join_info)
         result_partition_ids = intermediate_result.build_result(partition_ids)
 
         print("Execute partition join ids : ", result_partition_ids)
@@ -317,8 +386,8 @@ class HashJoinExecutor(JoinExecutor):
         self.current_result = []
 
         # Save metadata of column names of left table to self.current_result_column_names
-        new_left_table_column_names = left_table_column_names.union(right_table_column_names)
-        self.current_result_column_names = new_left_table_column_names
+        # new_left_table_column_names = left_table_column_names.union(right_table_column_names)
+        # self.current_result_column_names = new_left_table_column_names
 
         print(f"{join_type} JOIN with order num {self.join_order} completed with Partition Method")
         print(f"Result partitions ID are : {result_partition_ids}\n\n")
@@ -326,37 +395,38 @@ class HashJoinExecutor(JoinExecutor):
         return
     
     
-    def _execute_direct_join(self, left_table_rows, right_table_rows, join_type, right_table, join_column, next_join_column):
+    def _execute_direct_join(self, left_table_rows, right_table_rows, join_info, next_join_info):
+        next_join_column = next_join_info[0]
+        next_join_table = next_join_info[1]
 
         session = self.session
 
-        # Check whether current result is available
-        join_info = {
-            "join_order" : self.join_order,
-            "join_column" : join_column,
-            "join_type" : join_type,
-            "left_columns" : set(),
-            "right_columns" : set() 
-        }
+        # Breakdown the join_info
+        join_type = join_info['join_type']
+        left_table = join_info['left_table']
+        right_table = join_info['right_table']
+        join_column = join_info['join_column']
+        join_column_right = join_info['join_column_right']
 
         # Get metadata
         left_table_column_names = None
         right_table_column_names = None
 
-        # First join order always get column names from Cassandra
+        # First join order always get column names from Cassandra [MIGHT BE DELETED]
         if (self.join_order == 1):
             left_table_column_names = get_column_names_from_db(self.session, self.keyspace, self.left_table)
 
         else :
             left_table_column_names = self.current_result_column_names
 
-        right_table_column_names = get_column_names_from_db(self.session, self.keyspace, right_table)
+        left_table_column_names = self.join_metadata.get_columns_of_table(left_table)
+        right_table_column_names = self.join_metadata.get_columns_of_table(right_table)
 
-        # Add column names to join_info
+        # Add column names to join_info [MIGHT BE DELETED]
         join_info['left_columns'] = left_table_column_names
         join_info['right_columns'] = right_table_column_names
 
-        intermediate_result = IntermediateDirectHashResult(join_info, self.max_data_size, next_join_column)
+        intermediate_result = IntermediateDirectHashResult(join_info, self.max_data_size, next_join_info)
 
         # Convert result set as list
         left_table_rows = list(left_table_rows)
@@ -381,14 +451,13 @@ class HashJoinExecutor(JoinExecutor):
             print("BUILD AND PROBE TABLE SWITCHED")      
 
 
-        # TODO: Change for Outer joins
-
         if (not should_swap_table): # By default, process left table as Build table
             # Left table insertion to intermediate_result and clear left table rows for each iteration
             # Build table
             for idx in range(len(left_table_rows)):
                 row = left_table_rows[idx]
-                left_key = row[join_column]
+                dict_key = (join_column, left_table)
+                left_key = row[dict_key]
 
                 # Left table is build table by default
                 is_build_table = True
@@ -401,7 +470,8 @@ class HashJoinExecutor(JoinExecutor):
             # Probe table
             for idx in range(len(right_table_rows)):
                 row = right_table_rows[idx]
-                right_key = row[join_column]
+                dict_key = (join_column_right, right_table)
+                right_key = row[dict_key]
 
                 # Right table is probe table by default
                 is_build_table = False
@@ -438,7 +508,8 @@ class HashJoinExecutor(JoinExecutor):
             # Build table
             for idx in range(len(right_table_rows)):
                 row = right_table_rows[idx]
-                right_key = row[join_column]
+                dict_key = (join_column_right, right_table)
+                right_key = row[dict_key]
 
                 # Now that the tables have been swap, right table is now a Build table
                 is_build_table = True
@@ -450,7 +521,8 @@ class HashJoinExecutor(JoinExecutor):
             # Probe table
             for idx in range(len(left_table_rows)):
                 row = left_table_rows[idx]
-                left_key = row[join_column]
+                dict_key = (join_column, left_table)
+                left_key = row[dict_key]
 
                 # Left table is build table by default
                 is_build_table = False
@@ -495,8 +567,8 @@ class HashJoinExecutor(JoinExecutor):
         self.current_result = result
 
         # Save metadata of column names of left table to self.current_result_column_names
-        new_left_table_column_names = left_table_column_names.union(right_table_column_names)
-        self.current_result_column_names = new_left_table_column_names
+        # new_left_table_column_names = left_table_column_names.union(right_table_column_names)
+        # self.current_result_column_names = new_left_table_column_names
 
         print("\n")
         print(f"{join_type} JOIN with order num {self.join_order} completed with direct method")

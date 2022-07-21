@@ -83,6 +83,14 @@ def read_from_partition(join_order, partition_id, is_build):
     f = open(partition_path, 'r')
     data = f.readlines()
 
+    # Reformat data
+    for idx in range(len(data)):
+        curr_data = data[idx]
+        print(curr_data[:-1])
+        data[idx] = json.loads(curr_data[:-1])
+
+    data = jsonTupleKeyHashDecoder(data)
+
     print("READ FROM PARTITION RESULT : ", data)
 
     return data
@@ -128,7 +136,8 @@ def read_from_partition_nonhash(join_order, partition_id, is_left_table):
     return data
 
 
-def put_into_partition(data_page, join_order, join_column, is_left_table):
+def put_into_partition(data_page, join_order, table_name, join_column, is_left_table):
+    key = (join_column, table_name)
 
     hash_values_set = set()
 
@@ -145,8 +154,9 @@ def put_into_partition(data_page, join_order, join_column, is_left_table):
     if (not os.path.isdir(iter_path)):
         os.mkdir(iter_path)
 
+
     for data in data_page:
-        join_column_value = data[join_column]
+        join_column_value = data[key]
         partition_number = partition_hash_function(join_column_value)
 
         partition_filename = None
@@ -159,6 +169,9 @@ def put_into_partition(data_page, join_order, join_column, is_left_table):
         parittion_fullname = os.path.join(iter_path, partition_filename)
 
         hash_values_set.add(partition_number)
+
+        # Convert the row to acceptable json format
+        data = jsonTupleKeyHashUnitEncoder(data)
 
         f = open(parittion_fullname, mode='a')
         f.write(json.dumps(data)+"\n")

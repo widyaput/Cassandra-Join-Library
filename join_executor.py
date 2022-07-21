@@ -79,11 +79,11 @@ class JoinExecutor(ABC):
 
         return self
 
-    def fullOuterJoin(self, join_column, join_operator, right_table, join_column_right = None):
+    def fullOuterJoin(self, left_table, join_column, join_operator, right_table, join_column_right = None):
         # Inherited method
 
         join_type = "FULL_OUTER"
-        command = JoinCommand(join_type, right_table, join_column, join_column_right)
+        command = JoinCommand(join_type, left_table, join_column, right_table, join_column_right)
         self.command_queue.append(command)
 
         return self

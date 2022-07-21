@@ -1,3 +1,0 @@
-{"data": {"amount_paid": {"payment_received": 450000}, "email": {"payment_received": "rafi.adyatma@gmail.com"}, "payment_id": {"payment_received": 1}, "status": {"payment_received": "COMPLETE"}}, "flag": 1}
-{"data": {"amount_paid": {"payment_received": 1000}, "email": {"payment_received": "user2@bot.com"}, "payment_id": {"payment_received": 2}, "status": {"payment_received": "DELAYED"}}, "flag": 1}
-{"data": {"amount_paid": {"payment_received": 7007}, "email": {"payment_received": "outer_agent@bot.com"}, "payment_id": {"payment_received": 3}, "status": {"payment_received": "UNKNOWN"}}, "flag": 0}

@@ -9,18 +9,22 @@ NULL_DATA = None
 # Intermediate result for hash join
 class IntermediateDirectHashResult:
 
-    def __init__(self, join_info, max_size, next_join_column):
+    def __init__(self, join_info, max_size, next_join_info):
         super().__init__()
+        self.left_table = join_info['left_table']
+        self.right_table = join_info['right_table']
         self.join_type = join_info['join_type']
         self.join_order = join_info['join_order']
         self.join_column = join_info['join_column']
+        self.join_column_right = join_info['join_column_right']
 
         self.hash_table = {}
         self.total_rows = 0
 
         self.max_data_size = max_size
 
-        self.next_join_column = next_join_column
+        self.next_join_column = next_join_info[0]
+        self.next_join_table = next_join_info[1]
 
         # Metadata for both tables
         self.left_table_meta = join_info['left_columns']
@@ -33,6 +37,8 @@ class IntermediateDirectHashResult:
         # Non-matching rows storage
         self.no_match_left_rows = []
         self.no_match_right_rows = []
+
+        # Next join info
     
 
     def swap_build_and_probe(self):
@@ -64,7 +70,22 @@ class IntermediateDirectHashResult:
     # If certain value for join column is already available, append to left / right list
     # If not, add new hashtable member with new value (empty left and right list)
 
-        key_value = row_dict[self.join_column]
+        dict_key = None
+
+        if (is_build and self.build == "L"):
+            dict_key = (self.join_column, self.left_table)
+        
+        elif (is_build and self.build == "R"):
+            dict_key = (self.join_column_right, self.right_table)
+        
+        elif ((not is_build) and self.build == "L"):
+            dict_key = (self.join_column_right, self.right_table)
+
+        elif ((not is_build) and self.build == "R"):
+            dict_key = (self.join_column, self.left_table)
+
+        key_value = row_dict[dict_key]
+
 
         if (key_value == "null" or key_value == None or key_value == "None"): 
             # Do not insert when value is null or none
@@ -99,6 +120,18 @@ class IntermediateDirectHashResult:
 
         result_join_num = self.join_order + 1
 
+        # Build and Probe key
+        build_key = None
+        probe_key = None
+
+        if (self.build == "L"):
+            build_key = (self.join_column, self.left_table)
+            probe_key = (self.join_column_right, self.right_table)
+        
+        else :
+            build_key = (self.join_column_right, self.right_table)
+            probe_key = (self.join_column, self.left_table)
+
         # Printing for debug
         print("Left no matching : ", self.no_match_left_rows)
         print("Right no matching : ", self.no_match_right_rows)
@@ -110,7 +143,6 @@ class IntermediateDirectHashResult:
             probe_list = self.hash_table[key][1]
             
 
-            # TODO: [VERY IMPORTANT] Do the join based on join_type
             if (self.join_type == "INNER"):
                 print("INNER")
                 if (len(build_list) == 0 or len(probe_list) == 0):
@@ -146,7 +178,8 @@ class IntermediateDirectHashResult:
                 for right_idx in range(len(probe_list)):
                     right_item = probe_list[right_idx]
                     # Double checking real value (hash value already matched).
-                    if (left_item[self.join_column] == right_item[self.join_column]):
+                    if (left_item[build_key] == right_item[probe_key]):
+
                         merged = dict(list(left_item.items()) + list(right_item.items()))
 
                         result_size = asizeof.asizeof(result)
@@ -158,7 +191,7 @@ class IntermediateDirectHashResult:
 
                         if (should_use_partition):
                             
-                            row_partition_id = put_into_partition([merged], result_join_num, self.next_join_column)
+                            row_partition_id = put_into_partition([merged], result_join_num, self.next_join_table, self.next_join_column)
                             partition_id = partitions_id.union(row_partition_id)
 
                         else :
@@ -173,18 +206,17 @@ class IntermediateDirectHashResult:
                     elif (self.join_type == "LEFT_OUTER"):
                         if (self.build == "L"):
                             # Build dummy based on right table
-                            dummy_right = construct_null_columns(self.right_table_meta)
+                            dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
 
                             merged_list = []
                             for left_idx in range(len(build_list)):
                                 left_item = build_list[left_idx]
                                 merged = dict(list(left_item.items()) + list(dummy_right.items()))
-                                merged[self.join_column] = left_item[self.join_column]
 
                                 merged_list.append(merged)
 
                             if (should_use_partition):
-                                row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                                row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
                                 partition_id = partition_id.union(row_partition_id)
                             
                             else :
@@ -195,18 +227,17 @@ class IntermediateDirectHashResult:
                     elif (self.join_type == "RIGHT_OUTER"):
                         if (self.build == "R"):
                             # Build dummy based on left table
-                            dummy_left = construct_null_columns(self.left_table_meta)
+                            dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
 
                             merged_list = []
                             for right_idx in range(len(build_list)):
                                 right_item = build_list[right_idx]
                                 merged = dict(list(right_item.items()) + list(dummy_left.items()))
-                                merged[self.join_column] = right_item[self.join_column]
 
                                 merged_list.append(merged)
 
                             if (should_use_partition):
-                                row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                                row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
                                 partition_id = partition_id.union(row_partition_id)
                             
                             else :
@@ -216,36 +247,34 @@ class IntermediateDirectHashResult:
 
                     else : # FULL OUTER JOIN
                         if (self.build == "L"):
-                            dummy_right = construct_null_columns(self.right_table_meta)
+                            dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
 
                             merged_list = []
                             for left_idx in range(len(build_list)):
                                 left_item = build_list[left_idx]
                                 merged = dict(list(left_item.items()) + list(dummy_right.items()))
-                                merged[self.join_column] = left_item[self.join_column]
 
                                 merged_list.append(merged)
 
                                 if (should_use_partition):
-                                    row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                                    row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
                                     partition_id = partition_id.union(row_partition_id)
 
                                 else :
                                     result = result + merged_list
                         
                         else :
-                            dummy_left = construct_null_columns(self.left_table_meta)
+                            dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
 
                             merged_list = []
                             for right_idx in range(len(build_list)):
                                 right_item = build_list[right_idx]
                                 merged = dict(list(right_item.items()) + list(dummy_left.items()))
-                                merged[self.join_column] = right_item[self.join_column]
 
                                 merged_list.append(merged)
 
                                 if (should_use_partition):
-                                    row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                                    row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
                                     partition_id = partition_id.union(row_partition_id)
 
                                 else :
@@ -259,7 +288,7 @@ class IntermediateDirectHashResult:
         if (self.add_row_to_left_nomatch != [] or self.add_row_to_right_nomatch != []):
             if (self.join_type == "LEFT_OUTER"):
                 if (self.build == "R"):
-                    dummy_right = construct_null_columns(self.right_table_meta)
+                    dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
                     merged_list = []
 
                     for row_idx in range(len(self.no_match_left_rows)):
@@ -272,14 +301,14 @@ class IntermediateDirectHashResult:
                         self.no_match_left_rows[row_idx] = None
 
                     if (should_use_partition):
-                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
                     
                     else :
                         result = result + merged_list
                 
             elif (self.join_type == "RIGHT_OUTER"):
                 if (self.build == "L"):
-                    dummy_left = construct_null_columns(self.left_table_meta)
+                    dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
                     merged_list = []
 
                     for row_idx in range(len(self.no_match_right_rows)):
@@ -292,14 +321,14 @@ class IntermediateDirectHashResult:
                         self.no_match_right_rows[row_idx] = None
 
                     if (should_use_partition):
-                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
                     
                     else :
                         result = result + merged_list
 
             else : # FULL OUTER
                 if (self.build == "R"):
-                    dummy_right = construct_null_columns(self.right_table_meta)
+                    dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
                     merged_list = []
 
                     for row_idx in range(len(self.no_match_left_rows)):
@@ -311,13 +340,13 @@ class IntermediateDirectHashResult:
                         self.no_match_left_rows[row_idx] = None
 
                     if (should_use_partition):
-                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
                     
                     else :
                         result = result + merged_list
 
                 else :
-                    dummy_left = construct_null_columns(self.left_table_meta)
+                    dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
                     merged_list = []
 
                     for row_idx in range(len(self.no_match_right_rows)):
@@ -330,7 +359,7 @@ class IntermediateDirectHashResult:
                         self.no_match_right_rows[row_idx] = None
 
                     if (should_use_partition):
-                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_column)
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
                     
                     else :
                         result = result + merged_list
@@ -344,7 +373,7 @@ class IntermediateDirectHashResult:
 
         # Flush Result if partition needed
         if (should_use_partition):
-            flushed_partition_ids = put_into_partition(result, result_join_num, self.next_join_column, True)
+            flushed_partition_ids = put_into_partition(result, result_join_num, self.next_join_table, self.next_join_column, True)
             partition_id = partitions_id.union(flushed_partition_ids)
             result = []
 
@@ -355,12 +384,15 @@ class IntermediateDirectHashResult:
 
 class IntermediatePartitionedHashResult:
 
-    def __init__(self, join_info, max_size, next_join_column):
+    def __init__(self, join_info, max_size, next_join_info):
         super().__init__()
         self.total_rows = 0
 
+        self.left_table = join_info['left_table']
+        self.right_table = join_info['right_table']
         self.join_type = join_info['join_type']
         self.join_column = join_info['join_column']
+        self.join_column_right = join_info['join_column_right']
         self.join_order = join_info['join_order']
 
         self.max_data_size = max_size
@@ -369,12 +401,15 @@ class IntermediatePartitionedHashResult:
         self.left_table_meta = join_info['left_columns']
         self.right_table_meta = join_info['right_columns']
 
-        # If next join column is None, therefore it is the final result
-        # For final result, set next_join_column = join_column
-        if (next_join_column == None):
-            self.next_join_column = join_info['join_column']
-        else :
-            self.next_join_column = next_join_column
+        # # If next join column is None, therefore it is the final result
+        # # For final result, set next_join_column = join_column
+        # if (next_join_column == None):
+        #     self.next_join_column = join_info['join_column']
+        # else :
+        #     self.next_join_column = next_join_column
+        self.next_join_column = next_join_info[0]
+        self.next_join_table = next_join_info[1]
+
 
     def process_partition_pair(self, partition_num):
 
@@ -383,6 +418,9 @@ class IntermediatePartitionedHashResult:
 
         left_partition = read_from_partition(join_order, partition_num, True)
         right_partition = read_from_partition(join_order, partition_num, False)
+
+        left_joincol_key = (self.join_column, self.left_table)
+        right_joincol_key = (self.join_column_right, self.right_table)
 
         # Check if left partition or right partition is not found
         if ((left_partition == None) and (right_partition == None)):
@@ -395,10 +433,8 @@ class IntermediatePartitionedHashResult:
         # Process left table. Assume left table always be the Build Table
         if (left_partition != None):
             for left_row in left_partition:
-                # Convert string to JSON
-                left_row = json.loads(left_row[:-1])
 
-                key = left_row[self.join_column]
+                key = left_row[left_joincol_key]
                 if (key in partition_hash_table):
                     # There is already a key for that join column
                     partition_hash_table[key][0].append(left_row)
@@ -411,10 +447,8 @@ class IntermediatePartitionedHashResult:
         # Process right table. Assume right table always be the Probe table
         if (right_partition != None):
             for right_row in right_partition:
-                # Convert string to JSON
-                right_row = json.loads(right_row[:-1])
 
-                key = right_row[self.join_column]
+                key = right_row[right_joincol_key]
                 if (key in partition_hash_table):
                     # There is already a key for that join column
                     partition_hash_table[key][1].append(right_row)
@@ -431,6 +465,9 @@ class IntermediatePartitionedHashResult:
         join_order = self.join_order
 
         result_partition_ids = set()
+
+        left_joincol_key = (self.join_column, self.left_table)
+        right_joincol_key = (self.join_column_right, self.right_table)
 
         print("Left meta : ", self.left_table_meta)
         print("Right meta : ", self.right_table_meta)
@@ -460,49 +497,45 @@ class IntermediatePartitionedHashResult:
                 if (self.join_type == "LEFT_OUTER" and right_list == []):
                     print("\nMasuk left outer")
                     for left_row in left_list:
-                        dummy_right = construct_null_columns(self.right_table_meta)
+                        dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
                         merged = dict(list(left_row.items()) + list(dummy_right.items()))
-                        merged[self.join_column] = left_row[self.join_column]
                         partition_join_result.append(merged)
 
                 elif (self.join_type == "RIGHT_OUTER" and left_list == []):
                     print("\nMasuk right outer")
                     for right_row in right_list:
-                        dummy_left = construct_null_columns(self.left_table_meta)
+                        dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
                         merged = dict(list(right_row.items()) + list(dummy_left.items()))
-                        merged[self.join_column] = right_row[self.join_column]
                         partition_join_result.append(merged)
 
                 elif (self.join_type == "FULL_OUTER"):
                     print("\nMasuk fullouter bray")
                     if (left_list == []):
                         for right_row in right_list:
-                            dummy_left = construct_null_columns(self.left_table_meta)
+                            dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
                             merged = dict(list(right_row.items()) + list(dummy_left.items()))
-                            merged[self.join_column] = right_row[self.join_column]
                             partition_join_result.append(merged)
 
                     elif (right_list == []) :
                         for left_row in left_list:
-                            dummy_right = construct_null_columns(self.right_table_meta)
+                            dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
                             merged = dict(list(left_row.items()) + list(dummy_right.items()))
-                            merged[self.join_column] = left_row[self.join_column]
                             partition_join_result.append(merged)
 
                     else :
                         for left_row in left_list:
                             for right_row in right_list:
                                 # Compare for double checking equality
-                                if (left_row[self.join_column] == right_row[self.join_column]):
+                                if (left_row[left_joincol_key] == right_row[right_joincol_key]):
                                     merged = dict(list(left_row.items()) + list(right_row.items()))
                                     partition_join_result.append(merged)
 
                 else :
-                    print(f"\nMasuknya else bray tapi join : {self.join_type}")
+                    print(f"\nMasuknya else bray. Join type : {self.join_type}")
                     for left_row in left_list:
                         for right_row in right_list:
                             # Compare for double checking equality
-                            if (left_row[self.join_column] == right_row[self.join_column]):
+                            if (left_row[left_joincol_key] == right_row[right_joincol_key]):
                                 merged = dict(list(left_row.items()) + list(right_row.items()))
                                 partition_join_result.append(merged)
 
@@ -512,7 +545,7 @@ class IntermediatePartitionedHashResult:
 
             print(f"Partition join result : {partition_join_result}\n\n")
 
-            result_hash_values = put_into_partition(partition_join_result, next_join_order, self.next_join_column, True)
+            result_hash_values = put_into_partition(partition_join_result, next_join_order, self.next_join_table, self.next_join_column, True)
 
             # Merge partition ids with other ids
             result_partition_ids = result_partition_ids.union(result_hash_values)
