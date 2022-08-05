@@ -32,3 +32,11 @@ class ExecuteCommand(Command):
     def __init__(self):
         super().__init__()
         self.type = "EXECUTE"
+
+    
+class TableInfo():
+    def __init__(self, table_name, join_column, alias = None):
+        super().__init__()
+        self.name = table_name
+        self.join_column = join_column
+        self.alias = alias

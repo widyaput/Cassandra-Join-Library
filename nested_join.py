@@ -8,7 +8,7 @@ from math_utils import *
 from cassandra.query import dict_factory
 from join_executor import JoinExecutor
 
-class TupleJoinExecutor(JoinExecutor):
+class NestedJoinExecutor(JoinExecutor):
     def __init__(self, session, keyspace_name):
         super().__init__(session, keyspace_name)
 
@@ -24,7 +24,10 @@ class TupleJoinExecutor(JoinExecutor):
         self.partition_max_size = megabyte_to_byte(50)
 
         # Override force partition
-        self.force_partition = True
+        self.force_partition = False
+
+        # To force save partition trace
+        self.save_partition_trace = True
 
 
     def execute(self):

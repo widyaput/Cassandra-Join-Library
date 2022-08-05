@@ -1,6 +1,18 @@
+CREATE KEYSPACE dummy
+  WITH REPLICATION = { 
+   'class' : 'SimpleStrategy', 
+   'replication_factor' : 1 
+  };
+
+DROP TABLE user;
+
 SELECT * FROM system_schema.columns where keyspace_name = 'ecommerce' AND table_name = 'user';
 
-CREATE TABLE
+CREATE TABLE user (
+    userid int PRIMARY KEY,
+    name text,
+    email text
+)
 
 CREATE TABLE payment_received (
     payment_id int PRIMARY KEY,

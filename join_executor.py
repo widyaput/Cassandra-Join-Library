@@ -50,6 +50,9 @@ class JoinExecutor(ABC):
         # To force use partition method
         self.force_partition = False
 
+        # To force save partition trace
+        self.save_partition_trace = True
+
 
     def join(self, left_table, join_column, join_operator, right_table, join_column_right = None):
         # Append last

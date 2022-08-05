@@ -6,7 +6,7 @@ from cassandra.metadata import TableMetadata, ColumnMetadata
 
 from utils import *
 from hash_join import *
-from tuple_join import *
+from nested_join import *
 
 from file_utils import *
 
@@ -37,10 +37,14 @@ session.row_factory = dict_factory
 start_time = time.time()
 # -------------------------- Start here --------------------------
 
-join_result = HashJoinExecutor(session, keyspace_name) \
-    .fullOuterJoin(table1, join_column, "=", table2, join_column) \
-    .rightJoin(table1, third_join_column, "=", table3) \
+join_result = NestedJoinExecutor(session, keyspace_name) \
+    .join(table1, third_join_column, "=", table3, third_join_column) \
     .execute()
+
+# join_result = HashJoinExecutor(session, keyspace_name) \
+#     .fullOuterJoin(table1, join_column, "=", table2, join_column) \
+#     .rightJoin(table1, third_join_column, "=", table3) \
+#     .execute()
 
 # join_result = HashJoinExecutor(session, keyspace_name, left_table) \
 #     .join(right_table, join_column) \
@@ -48,22 +52,22 @@ join_result = HashJoinExecutor(session, keyspace_name) \
 #     .execute()
 
 
-# join_result = TupleJoinExecutor(session, keyspace_name) \
+# join_result = NestedJoinExecutor(session, keyspace_name) \
 #     .rightJoin(table1, join_column, "=", table2, join_column) \
 #     .leftJoin(table1, third_join_column, "=", table3) \
 #     .execute()
 
-# join_result = TupleJoinExecutor(session, keyspace_name) \
+# join_result = NestedJoinExecutor(session, keyspace_name) \
 #     .fullOuterJoin(table1, join_column, "=", table2, join_column) \
 #     .execute()
 
 
 print("\n\n")
 # For tuple Join
-# join_result = printableTupleKeyDecoder(join_result)
+join_result = printableTupleKeyDecoder(join_result)
 
 # For hash join
-join_result = printableHashJoinDecoder(join_result)
+# join_result = printableHashJoinDecoder(join_result)
 
 print_result_as_table(join_result)
 

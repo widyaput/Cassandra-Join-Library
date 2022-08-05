@@ -2,7 +2,7 @@ import time
 from pympler import asizeof
 from tabulate import tabulate
 from cassandra.cluster import Cluster
-from cassandra.query import dict_factory
+from cassandra.query import dict_factory, SimpleStatement
 from cassandra.metadata import TableMetadata, ColumnMetadata
 
 
@@ -14,72 +14,30 @@ from utils import *
 from file_utils import *
 from join_executor import *
 
+# Keyspace, Table and Join Column Information
+keyspace_name = 'dummy'
+table1 = "user"
+table2 = "payment_received"
+join_column = "email"
 
+table3 = "user_item_like"
+third_join_column = "userid"
 
-number_of_iterations = 5
-join_column = "ID"
+cluster = Cluster()
 
-dummy_data_per_iteration = [
-    {
-        "ID" : 1,
-        "Name" : "Rafi Adyatma"
-    },
-    {
-        "ID" : 2,
-        "Name" : "Raissa Azzahra"
-    },
-    {
-        "ID" : 3,
-        "Name" : "Adnan Wick"
-    },
-    {
-        "ID" : 4,
-        "Name" : "Farid Adika"
-    },
-    {
-        "ID" : 5,
-        "Name" : "Rio Aditia"
-    },
-    {
-        "ID" : 6,
-        "Name" : "Putri Devi"
-    },
-    {
-        "ID" : 7,
-        "Name" : "Faskal Rama"
-    },
-    {
-        "ID" : 1,
-        "Name" : "(Shadow) Rafi Adyatma"
-    }
-]
+session = cluster.connect(keyspace_name)
+session.default_fetch_size = 1
 
-t1 = time.time()
+# Set the row factory as dictionary factory, ResultSet is List of Dictionary
+session.row_factory = dict_factory
 
-the_data = [
-    [{
-        ("ID", "user") : 4,
-        ("Name", "user") : "Rafi Adyatma",
-        ("Email", "user") : "rafi.adyatma@gmail.com",
-        ("Name", "item") : "Long Sword"
-    },0],
-    [{
-        ("ID", "user") : 4,
-        ("Name", "user") : "Rafi Adyatma",
-        ("Email", "user") : "rafi.adyatma@gmail.com",
-        ("Name", "item") : "Long Sword"
-    },0]
-]
+query = "SELECT * FROM user"
 
-print("Original data : ", the_data, "\n")
+user_ps = session.prepare("SELECT * FROM user")
+user_ps.fetch_size = 1
 
-json_accepted_data = jsonTupleKeyEncoder(the_data)
-the_json = json.dumps(json_accepted_data)
+statement = SimpleStatement(query, fetch_size=10)
 
-read_json = json.loads(the_json)
-print("Readed json : ", read_json, "\n")
-revert_data = jsonTupleKeyDecoder(read_json)
-print("Reverted data : ", revert_data, "\n")
+rows = list(session.execute(statement))
+print(len(rows))
 
-t2 = time.time()
-print("Execution Time : ", t2-t1)

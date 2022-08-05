@@ -19,6 +19,9 @@ class HashJoinExecutor(JoinExecutor):
         # Override force partition
         self.force_partition = True
 
+        # To force save partition trace
+        self.save_partition_trace = True
+
 
     def execute(self):
         # Inherited abstract method
