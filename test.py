@@ -15,11 +15,22 @@ cluster = Cluster()
 # Keyspace, Table and Join Column Information
 keyspace_name = 'ecommerce'
 table1 = "user"
+alias1 = "A"
+
 table2 = "payment_received"
 join_column = "email"
+alias2 = "B"
 
 table3 = "user_item_like"
 third_join_column = "userid"
+alias3 = "C"
+
+tableInfo1_L = TableInfo(table1, join_column)
+tableInfo1_R = TableInfo(table2, join_column)
+
+tableInfo2_L = TableInfo(table1, third_join_column)
+tableInfo2_R = TableInfo(table3, third_join_column)
+
 
 session = cluster.connect(keyspace_name)
 
@@ -38,7 +49,8 @@ start_time = time.time()
 # -------------------------- Start here --------------------------
 
 join_result = NestedJoinExecutor(session, keyspace_name) \
-    .join(table1, third_join_column, "=", table3, third_join_column) \
+    .join(tableInfo1_L, tableInfo1_R) \
+    .fullOuterJoin(tableInfo2_L, tableInfo2_R) \
     .execute()
 
 # join_result = HashJoinExecutor(session, keyspace_name) \

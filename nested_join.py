@@ -24,7 +24,7 @@ class NestedJoinExecutor(JoinExecutor):
         self.partition_max_size = megabyte_to_byte(50)
 
         # Override force partition
-        self.force_partition = False
+        self.force_partition = True
 
         # To force save partition trace
         self.save_partition_trace = True
@@ -58,14 +58,26 @@ class NestedJoinExecutor(JoinExecutor):
                 
                 # Define join variables
                 join_type = join_command.join_type
-                left_table = join_command.left_table
-                right_table = join_command.right_table
+                real_left_table = join_command.left_table
+                real_right_table = join_command.right_table
                 join_column = join_command.join_column
                 join_column_right = join_command.join_column_right
                 join_operator = join_command.join_operator
 
+                left_alias = join_command.left_alias
+                right_alias = join_command.right_alias
+
+
                 if (join_column_right == None): #Join column name is same on both table
                     join_column_right = join_column
+
+                left_table = real_left_table
+                if (left_alias != None):
+                    left_table = left_alias
+
+                right_table = real_right_table
+                if (right_alias != None):
+                    right_table = right_alias
 
                 # Checking whether if join column is exist
                 table_cols = []
@@ -73,8 +85,8 @@ class NestedJoinExecutor(JoinExecutor):
                 is_lefttable_in_metadata = self.join_metadata.is_table_exists(left_table)
                 is_righttable_in_metadata = self.join_metadata.is_table_exists(right_table)
 
-                check_leftcols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{left_table}'"
-                check_rightcols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{right_table}'"
+                check_leftcols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{real_left_table}'"
+                check_rightcols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{real_right_table}'"
 
                 if (not is_lefttable_in_metadata):
                     left_meta_rows = session.execute(check_leftcols_query)
@@ -85,7 +97,7 @@ class NestedJoinExecutor(JoinExecutor):
                         self.join_metadata.add_one_column(left_table, column_name)
         
                 if (not left_table in self.table_query):
-                    self.table_query[left_table] = f"SELECT * FROM {left_table}"
+                    self.table_query[left_table] = f"SELECT * FROM {real_left_table}"
 
                 # Below are actions for Right table 
                 if (not is_righttable_in_metadata):
@@ -120,7 +132,7 @@ class NestedJoinExecutor(JoinExecutor):
                     if (idx != len(table_cols) - 1):
                         select_query += ","
                     else :
-                        select_query += f" FROM {right_table} "
+                        select_query += f" FROM {real_right_table} "
 
 
                 # Append to self.table_query
@@ -138,7 +150,9 @@ class NestedJoinExecutor(JoinExecutor):
                     "right_table" : right_table,
                     "join_column" : join_column,
                     "join_column_right" : join_column_right,
-                    "join_operator" : join_operator
+                    "join_operator" : join_operator,
+                    "left_alias" : left_alias,
+                    "right_alias" : right_alias
                 }
 
                 self.total_join_order += 1
@@ -198,7 +212,7 @@ class NestedJoinExecutor(JoinExecutor):
             return self.current_result
 
 
-    def _get_left_data(self, left_table):
+    def _get_left_data(self, left_table, left_alias):
         # Only get data when fit to memory. Otherwise, load in join execution function
         session = self.session
 
@@ -206,9 +220,14 @@ class NestedJoinExecutor(JoinExecutor):
         is_data_in_partitions = False
         left_last_partition_id = -1
 
+        left_table_name = left_table
+        if (left_alias != None):
+            left_table_name = left_alias
+        
+
         # Read data
         if (self.join_order == 1):
-            left_table_query = self.table_query[left_table]
+            left_table_query = self.table_query[left_table_name]
             print("Left table query : ", left_table_query)
 
             # TODO: Use paging for bigger queries
@@ -224,7 +243,7 @@ class NestedJoinExecutor(JoinExecutor):
                 row_dict = {}
                 for key in left_row:
                     value = left_row[key]
-                    new_key = (key, left_table)
+                    new_key = (key, left_table_name)
                     row_dict[new_key] = value
 
                 left_row = row_dict
@@ -263,7 +282,7 @@ class NestedJoinExecutor(JoinExecutor):
         return left_table_rows, is_data_in_partitions, left_last_partition_id
 
 
-    def _get_right_data(self, right_table):
+    def _get_right_data(self, right_table, right_alias):
         # Only get data when fit to memory. Otherwise, load in join execution function
         session = self.session
 
@@ -271,7 +290,11 @@ class NestedJoinExecutor(JoinExecutor):
         is_data_in_partitions = False
         right_last_partition_id = -1
 
-        right_table_query = self.table_query[right_table]
+        right_table_name = right_table
+        if (right_alias != None):
+            right_table_name = right_alias
+
+        right_table_query = self.table_query[right_table_name]
         print("Right table query : ", right_table_query)
 
         # TODO: Use paging query
@@ -285,7 +308,7 @@ class NestedJoinExecutor(JoinExecutor):
 
             for key in right_row:
                 value = right_row[key]
-                new_key = (key, right_table)
+                new_key = (key, right_table_name)
                 row_dict[new_key] = value
 
             right_row = row_dict
@@ -312,11 +335,22 @@ class NestedJoinExecutor(JoinExecutor):
         join_order = join_info['join_order']
         next_join_order = join_order + 1
 
+        left_alias = join_info['left_alias']
+        right_alias = join_info['right_alias']
+
+        left_table_name = left_table
+        if (left_alias != None):
+            left_table_name = left_alias
+        
+        right_table_name = right_table
+        if (right_alias != None):
+            right_table_name = right_alias
+
         # Left table
-        left_table_rows, is_left_in_partitions, left_last_partition_id = self._get_left_data(left_table)
+        left_table_rows, is_left_in_partitions, left_last_partition_id = self._get_left_data(left_table, left_alias)
 
         # Right table
-        right_table_rows, is_right_in_partitions, right_last_partition_id = self._get_right_data(right_table)
+        right_table_rows, is_right_in_partitions, right_last_partition_id = self._get_right_data(right_table, right_alias)
 
         # Check size
         if ((not is_left_in_partitions) and (not is_right_in_partitions)):
@@ -531,13 +565,23 @@ class NestedJoinExecutor(JoinExecutor):
         right_table = join_info['right_table']
         join_column = join_info['join_column']
         join_column_right = join_info['join_column_right']
+        left_alias = join_info['left_alias']
+        right_alias = join_info['right_alias']
+
+        left_table_name = left_table
+        if (left_alias != None):
+            left_table_name = left_alias
+        
+        right_table_name = right_table
+        if (right_alias != None):
+            right_table_name = right_alias
         
 
         operator = join_info['join_operator']
 
         # Create key
-        left_key = (join_column, left_table)
-        right_key = (join_column_right, right_table)
+        left_key = (join_column, left_table_name)
+        right_key = (join_column_right, right_table_name)
 
         # Get data based on key
         left_join_column_data = left_data[left_key]
@@ -648,8 +692,14 @@ class NestedJoinExecutor(JoinExecutor):
                 continue
             
             right_table = join_info['right_table']
-            right_table_columnns = self.join_metadata.get_columns_of_table(right_table)
-            right_data = construct_null_columns(right_table, right_table_columnns)
+            right_alias = join_info['right_alias']
+
+            right_table_name = right_table
+            if (right_alias != None):
+                right_table_name = right_alias
+
+            right_table_columnns = self.join_metadata.get_columns_of_table(right_table_name)
+            right_data = construct_null_columns(right_table_name, right_table_columnns)
 
             merged_row = self._force_merge_row(left_data, right_data)
             self._result_handler(merged_row, join_order)
@@ -667,8 +717,14 @@ class NestedJoinExecutor(JoinExecutor):
                 continue
 
             left_table = join_info['left_table']
-            left_table_columns = self.join_metadata.get_columns_of_table(left_table)
-            left_data = construct_null_columns(left_table, left_table_columns)
+            left_alias = join_info['left_alias']
+
+            left_table_name = left_table
+            if (left_alias != None):
+                left_table_name = left_alias
+
+            left_table_columns = self.join_metadata.get_columns_of_table(left_table_name)
+            left_data = construct_null_columns(left_table_name, left_table_columns)
 
             merged_row = self._force_merge_row(left_data, right_data)
             self._result_handler(merged_row, join_order)

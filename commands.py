@@ -4,17 +4,20 @@ class Command:
         self.type = "NOTYPE"
 
 class JoinCommand(Command):
-    def __init__(self, join_type, left_table, join_column, right_table, join_column_right = None):
+    def __init__(self, join_type, leftTableInfo, rightTableInfo, operator = "="):
         super().__init__()
         self.type = "JOIN"
         self.join_type = join_type
-        self.left_table = left_table
-        self.right_table = right_table
-        self.join_column = join_column
-        self.join_column_right = join_column_right
+        self.left_table = leftTableInfo.table_name
+        self.join_column = leftTableInfo.join_column
+        self.left_alias = leftTableInfo.alias
+
+        self.right_table = rightTableInfo.table_name
+        self.join_column_right = rightTableInfo.join_column
+        self.right_alias = rightTableInfo.alias
 
         # Set default, join is equi-join
-        self.join_operator = "="
+        self.join_operator = operator
 
     def set_operator(self, operator):
         self.join_operator = operator
@@ -33,10 +36,11 @@ class ExecuteCommand(Command):
         super().__init__()
         self.type = "EXECUTE"
 
-    
+
+# Will be used by user directly
 class TableInfo():
     def __init__(self, table_name, join_column, alias = None):
         super().__init__()
-        self.name = table_name
+        self.table_name = table_name
         self.join_column = join_column
         self.alias = alias

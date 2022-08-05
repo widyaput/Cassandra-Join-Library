@@ -13,6 +13,15 @@ class IntermediateDirectHashResult:
         super().__init__()
         self.left_table = join_info['left_table']
         self.right_table = join_info['right_table']
+        self.left_alias = join_info['left_alias']
+        self.right_alias = join_info['right_alias']
+
+        if (self.left_alias != None):
+            self.left_table = self.left_alias
+
+        if (self.right_alias != None):
+            self.right_table = self.right_alias
+
         self.join_type = join_info['join_type']
         self.join_order = join_info['join_order']
         self.join_column = join_info['join_column']
@@ -390,6 +399,15 @@ class IntermediatePartitionedHashResult:
 
         self.left_table = join_info['left_table']
         self.right_table = join_info['right_table']
+        self.left_alias = join_info['left_alias']
+        self.right_alias = join_info['right_alias']
+
+        if (self.left_alias != None):
+            self.left_table = self.left_alias
+
+        if (self.right_alias != None):
+            self.right_table = self.right_alias
+
         self.join_type = join_info['join_type']
         self.join_column = join_info['join_column']
         self.join_column_right = join_info['join_column_right']

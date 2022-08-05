@@ -25,10 +25,6 @@ class JoinExecutor(ABC):
         # Saving queries for each table needs (Select and Where Query)
         self.table_query = {}
 
-        # Set default select query on left_table
-        # self.table_query[table_name] = f"SELECT * FROM {table_name}"
-        self.table_query = {}
-
         # Set join order to 1. Add 1 for every additional join command
         self.join_order = 1
         self.total_join_order = 1
@@ -54,39 +50,39 @@ class JoinExecutor(ABC):
         self.save_partition_trace = True
 
 
-    def join(self, left_table, join_column, join_operator, right_table, join_column_right = None):
+    def join(self, leftTableInfo, rightTableInfo, join_operator = "="):
         # Append last
 
         join_type = "INNER"
-        command = JoinCommand(join_type, left_table, join_column, right_table, join_column_right)
+        command = JoinCommand(join_type, leftTableInfo, rightTableInfo, join_operator)
         self.command_queue.append(command)
 
         return self
 
-    def leftJoin(self, left_table, join_column, join_operator, right_table, join_column_right = None):
+    def leftJoin(self, leftTableInfo, rightTableInfo, join_operator = "="):
         # Inherited method
 
         join_type = "LEFT_OUTER"
-        command = JoinCommand(join_type, left_table, join_column, right_table, join_column_right)
+        command = JoinCommand(join_type, leftTableInfo, rightTableInfo, join_operator)
         self.command_queue.append(command)
 
         return self
 
 
-    def rightJoin(self, left_table, join_column, join_operator, right_table, join_column_right = None):
+    def rightJoin(self, leftTableInfo, rightTableInfo, join_operator = "="):
         # Inherited method
 
         join_type = "RIGHT_OUTER"
-        command = JoinCommand(join_type, left_table, join_column, right_table, join_column_right)
+        command = JoinCommand(join_type, leftTableInfo, rightTableInfo, join_operator)
         self.command_queue.append(command)
 
         return self
 
-    def fullOuterJoin(self, left_table, join_column, join_operator, right_table, join_column_right = None):
+    def fullOuterJoin(self, leftTableInfo, rightTableInfo, join_operator = "="):
         # Inherited method
 
         join_type = "FULL_OUTER"
-        command = JoinCommand(join_type, left_table, join_column, right_table, join_column_right)
+        command = JoinCommand(join_type, leftTableInfo, rightTableInfo, join_operator)
         self.command_queue.append(command)
 
         return self
