@@ -23,12 +23,11 @@ class JoinCommand(Command):
         self.join_operator = operator
 
 class SelectCommand(Command):
-    def __init__(self, table, column_name, condition):
+    def __init__(self, table, columns):
         super().__init__()
         self.type = "SELECT"
         self.table = table
-        self.column_name = column_name
-        self.condition = condition
+        self.columns = columns
 
 
 class ExecuteCommand(Command):

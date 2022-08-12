@@ -48,10 +48,13 @@ session.row_factory = dict_factory
 start_time = time.time()
 # -------------------------- Start here --------------------------
 
-join_result = NestedJoinExecutor(session, keyspace_name) \
-    .join(tableInfo1_L, tableInfo1_R) \
+HashJoinExecutor(session, keyspace_name) \
+    .fullOuterJoin(tableInfo1_L, tableInfo1_R) \
     .fullOuterJoin(tableInfo2_L, tableInfo2_R) \
-    .execute()
+    .execute() \
+    .save_result("joinhash1")
+
+printJoinResult("joinhash1")
 
 # join_result = HashJoinExecutor(session, keyspace_name) \
 #     .fullOuterJoin(table1, join_column, "=", table2, join_column) \
@@ -76,12 +79,12 @@ join_result = NestedJoinExecutor(session, keyspace_name) \
 
 print("\n\n")
 # For tuple Join
-join_result = printableTupleKeyDecoder(join_result)
+# join_result = printableTupleKeyDecoder(join_result)
 
 # For hash join
 # join_result = printableHashJoinDecoder(join_result)
 
-print_result_as_table(join_result)
+# print_result_as_table(join_result)
 
 print("\n\n")
 

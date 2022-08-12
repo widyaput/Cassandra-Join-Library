@@ -1,0 +1,1 @@
+{"amount_paid": {"payment_received": 7007}, "email": {"payment_received": "outer_agent@bot.com", "user": null}, "payment_id": {"payment_received": 3}, "status": {"payment_received": "UNKNOWN"}, "name": {"user": null}, "userid": {"user": null}}

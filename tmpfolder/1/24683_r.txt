@@ -1,0 +1,1 @@
+{"amount_paid": {"payment_received": 450000}, "email": {"payment_received": "rafi.adyatma@gmail.com"}, "payment_id": {"payment_received": 1}, "status": {"payment_received": "COMPLETE"}}

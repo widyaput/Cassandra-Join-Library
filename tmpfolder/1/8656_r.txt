@@ -1,0 +1,1 @@
+{"amount_paid": {"payment_received": 1000}, "email": {"payment_received": "user2@bot.com"}, "payment_id": {"payment_received": 2}, "status": {"payment_received": "DELAYED"}}

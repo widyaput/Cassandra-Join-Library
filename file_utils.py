@@ -1,3 +1,4 @@
+import os, shutil
 # File utils to ease join usage, includes format utils
 
 def jsonTupleKeyEncoder(data):
@@ -84,6 +85,7 @@ def jsonTupleKeyHashDecoder(loaded_json):
     return tuple_key_data
 
 
+
 def printableTupleKeyDecoder(data):
     for idx in range(len(data)):
         row = data[idx]
@@ -112,3 +114,17 @@ def printableHashJoinDecoder(data):
         data[idx] = printable
     
     return data
+
+
+def delete_prev_result(join_order):
+
+    cwd = os.getcwd()
+    tmp_folder = "tmpfolder"
+
+    tmp_folder_path = os.path.join(cwd, tmp_folder)
+    join_order_path = os.path.join(tmp_folder_path, join_order)
+
+    shutil.rmtree(join_order_path)
+
+    return
+

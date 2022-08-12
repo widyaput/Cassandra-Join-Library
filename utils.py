@@ -29,12 +29,101 @@ def print_result_as_table(result):
     for key in result[0]:
         cols[key] = key
 
-    table = tabulate(result, headers=cols, tablefmt='orgtbl')
+    table = tabulate(result, headers=cols, tablefmt='psql')
 
     print(table)
 
     return 
 
+def printJoinResult(filename, max_buffer_size=10000):
+    # Auto convert as .txt
+    filename = filename + ".txt"
+
+    cwd = os.getcwd()
+    res_folder = "results"
+
+    join_type = None
+
+    res_folder_path = os.path.join(cwd, res_folder)
+
+    if (not os.path.isdir(res_folder_path)):
+        print("Result folder not found!")
+        return
+    
+    file_path = os.path.join(res_folder_path, filename)
+
+    if (not os.path.isfile(file_path)):
+        print(f"Result with filename {filename} cannot be found!")
+        return
+
+    res_file = open(file_path, mode='r')
+
+    # Try nested join decoder.. if doesn't work, use hash join decoder
+    buffer = []
+    row_read = res_file.readline()
+    while (row_read != ''):
+        row_read = row_read[:-1]
+        row_read = json.loads(row_read)
+        buffer.append(row_read)
+
+        print(buffer)
+
+        if (len(buffer) == max_buffer_size):
+            if (join_type == None):
+                try:
+                    buffer = jsonTupleKeyDecoder(buffer)
+                    join_type = "NESTED"
+                except:
+                    buffer = jsonTupleKeyHashDecoder(buffer)
+                    join_type = "HASH"
+                
+            elif (join_type == "NESTED"):
+                buffer = jsonTupleKeyDecoder(buffer)
+            
+            elif (join_type == "HASH"):
+                buffer = jsonTupleKeyHashDecoder(buffer)
+                
+            # Change buffer format to printable
+            if (join_type == "NESTED"):
+                buffer = printableTupleKeyDecoder(buffer)
+            
+            elif (join_type == "HASH"):
+                buffer = printableHashJoinDecoder(buffer)
+
+            # Print buffer and reset buffer
+            print_result_as_table(buffer)
+            buffer = []
+
+        row_read = res_file.readline()
+    
+    # Flush if buffer not empty
+    if (buffer != []):
+        if (join_type == None):
+            try:
+                buffer = jsonTupleKeyDecoder(buffer)
+                join_type = "NESTED"
+            except:
+                buffer = jsonTupleKeyHashDecoder(buffer)
+                join_type = "HASH"
+            
+        elif (join_type == "NESTED"):
+            buffer = jsonTupleKeyDecoder(buffer)
+        
+        elif (join_type == "HASH"):
+            buffer = jsonTupleKeyHashDecoder(buffer)
+        
+        # Change buffer format to printable
+        if (join_type == "NESTED"):
+            buffer = printableTupleKeyDecoder(buffer)
+        
+        elif (join_type == "HASH"):
+            buffer = printableHashJoinDecoder(buffer)
+
+        # Print buffer and reset buffer
+        print_result_as_table(buffer)
+        buffer = []
+
+    return
 
 def partition_hash_function(M): # H1(X) Function
     # Summing all characters of the input in ASCII Number multiplied by the position of the character in the string 
@@ -166,14 +255,14 @@ def put_into_partition(data_page, join_order, table_name, join_column, is_left_t
         else :
             partition_filename = str(partition_number) + "_r" + ".txt"
             
-        parittion_fullname = os.path.join(iter_path, partition_filename)
+        partition_fullname = os.path.join(iter_path, partition_filename)
 
         hash_values_set.add(partition_number)
 
         # Convert the row to acceptable json format
         data = jsonTupleKeyHashUnitEncoder(data)
 
-        f = open(parittion_fullname, mode='a')
+        f = open(partition_fullname, mode='a')
         f.write(json.dumps(data)+"\n")
         f.close()
     
@@ -187,6 +276,7 @@ def put_into_partition(data_page, join_order, table_name, join_column, is_left_t
 def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_partition_id, is_left_table):
     partition_data = []
 
+    last_partition_path = None
     last_partition_size = 0
 
     cwd = os.getcwd()
@@ -259,7 +349,19 @@ def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_p
 
         
     # Force flush partition
-    new_last_partition_id = last_partition_id + 1
+    new_last_partition_id = 0
+    if (last_partition_id == -1):
+        new_last_partition_id = last_partition_id + 1
+    
+    else:
+        # Should append to existing partition
+        if (last_partition_size > 0):
+            new_last_partition_id = last_partition_id
+
+        # Should generate new partition
+        else :
+            new_last_partition_id = last_partition_id + 1
+
     new_last_partition_name = str(new_last_partition_id)
 
     if (is_left_table):

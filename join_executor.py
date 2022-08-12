@@ -19,6 +19,9 @@ class JoinExecutor(ABC):
         # Saving commands for Lazy execution
         self.command_queue = []
 
+        # Select command queue
+        self.selected_cols = {}
+
         # Set a left table as the join process is a deep left-join
         self.left_table = "EMPTY"
 
@@ -48,6 +51,13 @@ class JoinExecutor(ABC):
 
         # To force save partition trace
         self.save_partition_trace = True
+
+        # Cassandra details
+        self.cassandra_fetch_size = 5
+        self.paging_state = {}
+
+    def get_size(self):
+        return asizeof.asizeof(self)
 
 
     def join(self, leftTableInfo, rightTableInfo, join_operator = "="):
@@ -88,16 +98,70 @@ class JoinExecutor(ABC):
         return self
 
 
-    def select(self, table, column, condition):
+    def select(self, table, columns):
         # Inherited method
 
-        command = SelectCommand(table, column, condition)
+        columns = set(columns)
+        command = SelectCommand(table, columns)
         self.command_queue.insert(0, command)
 
         return self
 
+    def selects_validation(self):
+        # Can only do select when all join columns are selected
+
+        if (self.selected_cols == {}):
+            return True
+        
+        for command in self.command_queue:
+            if (command.type != "JOIN"):
+                continue
+            
+            left_alias = command.left_alias
+            left_table = command.left_table
+            if (left_alias != None):
+                left_table = left_alias
+            left_join_col = command.join_column
+
+            is_left_table_exists = False
+
+            try:
+                is_left_table_exists = left_table in self.selected_cols
+
+            except:
+                pass
+
+            if (is_left_table_exists):
+                if (not left_join_col in self.selected_cols[left_table]):
+                    print(f"Join column {left_join_col} in {left_table} are not selected!")
+                    return False
+
+
+            right_alias = command.right_alias            
+            right_table = command.right_table
+            if (right_alias != None):
+                right_table = right_alias
+            right_join_col = command.join_column_right
+
+            try:
+                is_right_table_exists = right_table in self.selected_cols
+
+            except:
+                pass
+            
+            if (is_right_table_exists):
+                if (not right_join_col in self.selected_cols[right_table]):
+                    print(f"Join column {right_join_col} in {right_table} are not selected!")
+                    return False
+
+        return True
+
     @abstractmethod
     def execute(self):
+        pass
+
+    # @abstractmethod
+    def save_result(self, filename):
         pass
 
 
@@ -149,5 +213,4 @@ class JoinMetadata:
 
     
     def get_size(self):
-
         return asizeof.asizeof(self)

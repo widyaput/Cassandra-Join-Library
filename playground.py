@@ -26,18 +26,52 @@ third_join_column = "userid"
 cluster = Cluster()
 
 session = cluster.connect(keyspace_name)
-session.default_fetch_size = 1
+
+fetch_size = 10
+
+class MyPlayground:
+    def __init__(self):
+        self.table_name = "Hello"
+
+    def execute(self):
+        query = "SELECT * FROM user"
+        statement = SimpleStatement(query, fetch_size=100)
+        total_rows = 0
+        total_size = 0
+        for row in session.execute(statement):
+            total_rows += 1
+            total_size += asizeof.asizeof(row)
+            print(asizeof.asizeof(row))
+            # print(self.get_size())
+        
+        print(total_rows)
+        print(total_size)
+
+    def get_size(self):
+        return asizeof.asizeof(self)
 
 # Set the row factory as dictionary factory, ResultSet is List of Dictionary
 session.row_factory = dict_factory
 
-query = "SELECT * FROM user"
+meta = {}
 
-user_ps = session.prepare("SELECT * FROM user")
-user_ps.fetch_size = 1
+# myObject = MyPlayground()
+# myObject.execute()
 
-statement = SimpleStatement(query, fetch_size=10)
+myResults = [{
+    "ID" : 1,
+    "Name" : "Rafi",
+    },
+    {
+        "ID" : 2,
+        "Name" : "Raissa",
+    },
+    {
+        "ID" : 3,
+        "Name" : "Adnan",
+    }
+    ]
 
-rows = list(session.execute(statement))
-print(len(rows))
+print_result_as_table(myResults)
+print_result_as_table(myResults)
 
