@@ -1,4 +1,5 @@
 import psutil
+import time
 from pympler import asizeof
 
 from commands import *
@@ -20,7 +21,7 @@ class HashJoinExecutor(JoinExecutor):
         self.force_partition = False
 
         # To force save partition trace
-        self.save_partition_trace = True
+        self.save_partition_trace = False
 
         # FOR TESTING USAGE
         self.max_data_size = 0
@@ -29,7 +30,7 @@ class HashJoinExecutor(JoinExecutor):
     def execute(self):
         # Inherited abstract method
         # Consume the commands queue, execute join
-
+        initial_time = time.time()
         session = self.session
         selects_valid = None
 
@@ -190,6 +191,7 @@ class HashJoinExecutor(JoinExecutor):
 
 
         # Execute all joins based on self.joins_info
+        initial_join_time = time.time()
         for join_info_idx in range(len(self.joins_info)):
             join_info = self.joins_info[join_info_idx]
 
@@ -232,28 +234,16 @@ class HashJoinExecutor(JoinExecutor):
             # Increment join_order num
             self.join_order += 1
 
+            # Delete previous join order
+            if (not self.save_partition_trace):
+                delete_prev_result(str(self.join_order - 1))
 
-        # Build final result here
-        # if (self.current_result == []): # Final result is in disk
-        #     # For now, merge all results to memory
-        #     # TODO: Merge to file or print per batch
-        #     final_result = []
-        #     partition_ids = self.current_join_partition_ids
-        #     final_join_order = self.join_order
+        final_join_time = time.time()
+        final_time = time.time()
 
-        #     for id in partition_ids:
-        #         # Read data
-        #         partition_data = read_from_partition(final_join_order, id, True)
-        #         for row in partition_data:
-        #             final_result.append(row)
+        self.time_elapsed['join'] = final_join_time - initial_join_time
+        self.time_elapsed['total'] = final_time - initial_time
 
-        #     # TODO: Delete all tmpfiles after join operation
-
-        #     return final_result
-        
-        # else : # Final result is in memory (self.current_result), return immediately
-
-        #     return self.current_result
         return self
 
     def _get_left_data(self, left_table, join_column, left_alias):
@@ -505,11 +495,22 @@ class HashJoinExecutor(JoinExecutor):
         if (right_alias != None):
             right_table_name = right_alias
 
+
+        initial_fetch_time = time.time()
         # Get Left table data
         left_table_rows, is_left_table_in_partitions, left_partition_ids = self._get_left_data(left_table, join_column, left_alias)
 
         # Get right table data
         right_table_rows, is_right_table_in_partitions, right_partition_ids = self._get_right_data(right_table, join_column_right, right_alias, is_left_table_in_partitions)
+
+        final_fetch_time = time.time()
+        fetch_time = final_fetch_time - initial_fetch_time
+
+        key_name = "data_fetch"
+        if (key_name in self.time_elapsed):
+            self.time_elapsed[key_name] += fetch_time
+        else :
+            self.time_elapsed[key_name] = fetch_time
 
         # Do join based on whether partitions is used or not
         if (is_left_table_in_partitions and is_right_table_in_partitions):
@@ -834,5 +835,8 @@ class HashJoinExecutor(JoinExecutor):
                 f_res.write(json.dumps(row)+"\n")
 
         f_res.close()
+        # Delete result
+        if (not self.save_partition_trace):
+            delete_prev_result(str(self.join_order))
 
-        return
+        return self

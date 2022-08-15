@@ -56,6 +56,9 @@ class JoinExecutor(ABC):
         self.cassandra_fetch_size = 5
         self.paging_state = {}
 
+        # Save durations for each operation
+        self.time_elapsed = {}
+
     def get_size(self):
         return asizeof.asizeof(self)
 
@@ -155,6 +158,24 @@ class JoinExecutor(ABC):
                     return False
 
         return True
+
+    def get_time_elapsed(self):
+        if (self.time_elapsed == {}):
+            print("Join has not been executed!")
+            return
+        
+        print("Details of time elapsed\n\n")
+        join_time = self.time_elapsed['join']
+        fetch_time = self.time_elapsed['data_fetch']
+        total_time = self.time_elapsed['total']
+        join_without_fetch = join_time - fetch_time
+
+        print(f"Fetch Time: {fetch_time} s")
+        print(f"Join without fetch time: {join_without_fetch} s")
+        print(f"Join total time: {join_time} s")
+        print(f"Total time elapsed: {total_time} s\n")
+
+        return self
 
     @abstractmethod
     def execute(self):

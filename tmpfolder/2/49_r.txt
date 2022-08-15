@@ -1,2 +1,0 @@
-{"itemid": {"user_item_like": 1}, "rating": {"user_item_like": 4}, "userid": {"user_item_like": 1}}
-{"itemid": {"user_item_like": 2}, "rating": {"user_item_like": 3}, "userid": {"user_item_like": 1}}

@@ -63,6 +63,9 @@ VALUES (7, 'faskal.rama@gmail.com', 'Faskal Rama');
 INSERT INTO ecommerce.user (userid, email, name) 
 VALUES (8, 'khalwa_ernest@gmail.com', 'Khalwa Ernest');
 
+INSERT INTO ecommerce.user (userid, email, name) 
+VALUES (9, 'raissa.azz@gmail.com', 'Raissa Azzahra');
+
 INSERT INTO ecommerce.item (itemid, name, description)
 VALUES (1, 'Keyboard', 'Mechanical Gaming Keyboard')
 

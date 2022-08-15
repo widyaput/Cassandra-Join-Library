@@ -1,5 +1,6 @@
 import psutil
 import os
+import time
 from pympler import asizeof
 
 from commands import *
@@ -36,6 +37,7 @@ class NestedJoinExecutor(JoinExecutor):
 
     def execute(self):
         # Consume the commands queue, execute join
+        initial_time = time.time()
         session = self.session
         selects_valid = None
 
@@ -193,6 +195,7 @@ class NestedJoinExecutor(JoinExecutor):
 
 
         # Execute all joins based on self.joins_info
+        initial_join_time = time.time()
         for join_info_idx in range(len(self.joins_info)):
             join_info = self.joins_info[join_info_idx]
 
@@ -216,29 +219,16 @@ class NestedJoinExecutor(JoinExecutor):
             self.right_table_last_partition_id = -1
             self.result_last_partition_id = -1
 
+            # Delete previous join order
+            if (not self.save_partition_trace):
+                delete_prev_result(str(self.join_order - 1))
 
-        # Build final result here
-        # if (self.current_result == []): # Final result is in disk
-        #     # For now, merge all results to memory
-        #     final_result = []
-        #     left_last_partition_id = self.left_table_last_partition_id
-        #     final_join_order = self.join_order
+        final_join_time = time.time()
+        final_time = time.time()
 
+        self.time_elapsed['join'] = final_join_time - initial_join_time
+        self.time_elapsed['total'] = final_time - initial_time
 
-        #     for id in range(0,left_last_partition_id+1):
-        #         # Read data
-        #         partition_data = read_from_partition_nonhash(final_join_order, id, True)
-
-        #         for row in partition_data:
-        #             final_result.append(row)
-
-        #     # TODO: Delete all tmpfiles after join operation
-
-        #     return final_result
-        
-        # else : # Final result is in memory (self.current_result), return immediately
-
-        #     return self.current_result
         return self
 
 
@@ -510,11 +500,22 @@ class NestedJoinExecutor(JoinExecutor):
         if (right_alias != None):
             right_table_name = right_alias
 
+        initial_fetch_time = time.time()
+
         # Left table
         left_table_rows, is_left_in_partitions, left_last_partition_id = self._get_left_data(left_table, left_alias)
 
         # Right table
         right_table_rows, is_right_in_partitions, right_last_partition_id = self._get_right_data(right_table, right_alias)
+
+        final_fetch_time = time.time()
+        fetch_time = final_fetch_time - initial_fetch_time
+
+        key_name = "data_fetch"
+        if (key_name in self.time_elapsed):
+            self.time_elapsed[key_name] += fetch_time
+        else :
+            self.time_elapsed[key_name] = fetch_time
 
         print(f"Left in partition : {is_left_in_partitions}")
         print(f"Left rows : {left_table_rows}")
@@ -951,7 +952,12 @@ class NestedJoinExecutor(JoinExecutor):
                 f_res.write(json.dumps(row)+"\n")
 
         f_res.close()
-        return
+
+        # Delete result
+        if (not self.save_partition_trace):
+            delete_prev_result(str(self.join_order))
+
+        return self
 
 
 

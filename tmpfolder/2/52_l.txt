@@ -1,1 +1,0 @@
-{"userid": {"user": 4}, "email": {"user": "rio.aditia@paboi.com", "payment_received": null}, "name": {"user": "Rio Aditia"}, "amount_paid": {"payment_received": null}, "payment_id": {"payment_received": null}, "status": {"payment_received": null}}

@@ -17,16 +17,18 @@ keyspace_name = 'ecommerce'
 table1 = "user"
 alias1 = "A"
 
+join_column = "userid"
+
 table2 = "payment_received"
-join_column = "email"
 alias2 = "B"
 
 table3 = "user_item_like"
 third_join_column = "userid"
 alias3 = "C"
 
+
 tableInfo1_L = TableInfo(table1, join_column)
-tableInfo1_R = TableInfo(table2, join_column)
+tableInfo1_R = TableInfo(table3, join_column)
 
 tableInfo2_L = TableInfo(table1, third_join_column)
 tableInfo2_R = TableInfo(table3, third_join_column)
@@ -48,13 +50,15 @@ session.row_factory = dict_factory
 start_time = time.time()
 # -------------------------- Start here --------------------------
 
-HashJoinExecutor(session, keyspace_name) \
-    .fullOuterJoin(tableInfo1_L, tableInfo1_R) \
-    .fullOuterJoin(tableInfo2_L, tableInfo2_R) \
+NestedJoinExecutor(session, keyspace_name) \
+    .join(tableInfo1_L, tableInfo1_R) \
     .execute() \
-    .save_result("joinhash1")
+    .save_result("joinnested1") \
+    .get_time_elapsed()
 
-printJoinResult("joinhash1")
+printJoinResult("joinnested1")
+
+
 
 # join_result = HashJoinExecutor(session, keyspace_name) \
 #     .fullOuterJoin(table1, join_column, "=", table2, join_column) \
