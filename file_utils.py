@@ -124,6 +124,9 @@ def delete_prev_result(join_order):
     tmp_folder_path = os.path.join(cwd, tmp_folder)
     join_order_path = os.path.join(tmp_folder_path, join_order)
 
+    if (not os.path.isdir(join_order_path)):
+        return
+
     shutil.rmtree(join_order_path)
 
     return

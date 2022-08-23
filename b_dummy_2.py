@@ -14,10 +14,10 @@ join_column = "email"
 tableinfoL = TableInfo(table1, join_column)
 tableinfoR = TableInfo(table2, join_column)
 
-HashjoinExecutor(session, keyspace_name) \ 
+executor = HashJoinExecutor(session, keyspace_name) \
     .fullOuterJoin(tableinfoL, tableinfoR) \
     .execute() \
     .save_result("b_dummy_2_result") \
-    .get_time_elapsed()
 
 printJoinResult("b_dummy_2_result")
+executor.get_time_elapsed()

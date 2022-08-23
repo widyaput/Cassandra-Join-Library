@@ -29,10 +29,17 @@ class NestedJoinExecutor(JoinExecutor):
         self.force_partition = False
 
         # To force save partition trace
-        self.save_partition_trace = True
+        self.save_partition_trace = False
 
         # FOR TESTING USAGE
-        self.max_data_size = 0
+        # self.max_data_size = 0
+
+
+    def get_left_size():
+        return self.left_data_size
+
+    def get_right_size():
+        return self.right_data_size
 
 
     def execute(self):
@@ -277,6 +284,7 @@ class NestedJoinExecutor(JoinExecutor):
 
                 # Size checking is not conducted with assumption
                 # 5000 rows always fit in memory
+                self.left_data_size = asizeof.asizeof(left_table_rows)
             
             else :
                 # Handle rows in the first page
@@ -305,6 +313,8 @@ class NestedJoinExecutor(JoinExecutor):
                         self.paging_state[left_table_name] = results.paging_state
                         break
                 
+                self.left_data_size = asizeof.asizeof(left_table_rows)
+
                 # Handle the rest of the rows
                 while (results.has_more_pages):
                     rows_fetched = 0
@@ -338,13 +348,16 @@ class NestedJoinExecutor(JoinExecutor):
                             self.paging_state[left_table_name] = results.paging_state
                             break
                     
+                        self.left_data_size += asizeof.asizeof(row)
+                    
                     # SIZE Checking: Checking done per page
-                    if ((self.max_data_size <= self.get_size()) or is_data_in_partitions or self.force_partition):
+                    if ((self.max_data_size / 2 <= self.get_left_size()) or is_data_in_partitions or self.force_partition):
                         is_data_in_partitions = True
 
                         left_last_partition_id = put_into_partition_nonhash(left_table_rows, self.join_order, self.partition_max_size, self.left_table_last_partition_id, True)
                         # Reset left_table_rows to empty list
                         left_table_rows = []
+                        self.left_data_size = 0
                         
                         # Update last partition id
                         self.left_table_last_partition_id = left_last_partition_id
@@ -352,7 +365,7 @@ class NestedJoinExecutor(JoinExecutor):
             
         else : # Non first order join, left table may from partitions or cassandra
             if (self.current_result == []):
-                print("Masuk disk")
+                print(f"Left table for join order {self.join_order} will be fetched from disk")
                 left_last_partition_id = self.left_table_last_partition_id
                 is_data_in_partitions = True
 
@@ -360,8 +373,9 @@ class NestedJoinExecutor(JoinExecutor):
                 
             
             else :
-                print("Masuk memory")
+                print(f"Left table for join order {self.join_order} will be fetched from memory")
                 left_table_rows = self.current_result
+                self.left_data_size = asizeof.asizeof(left_table_rows)
 
                 # Reset current result
                 self.current_result = []
@@ -410,6 +424,7 @@ class NestedJoinExecutor(JoinExecutor):
 
             # Size checking is not conducted with assumption
             # 5000 rows always fit in memory
+            self.right_data_size = asizeof.asizeof(right_table_rows)
 
         else :
             # Handle rows in first page
@@ -434,6 +449,8 @@ class NestedJoinExecutor(JoinExecutor):
                 if (rows_fetched == self.cassandra_fetch_size):
                     self.paging_state[right_table_name] = results.paging_state
                     break
+
+                self.right_data_size += asize.asizeof(row)
 
             # Handle the rest of the rows
             while (results.has_more_pages):
@@ -467,14 +484,17 @@ class NestedJoinExecutor(JoinExecutor):
                     if (rows_fetched == self.cassandra_fetch_size):
                         self.paging_state[right_table_name] = results.paging_state
                         break
+
+                    self.right_data_size += asizeof.asizeof(row)
                 
                 # SIZE Checking: Check size used per page
-                if ((self.max_data_size <= self.get_size()) or is_data_in_partitions or self.force_partition):
+                if ((self.max_data_size / 2 <= self.get_right_size()) or is_data_in_partitions or self.force_partition):
                     is_data_in_partitions = True
 
                     right_last_partition_id = put_into_partition_nonhash(right_table_rows, self.join_order, self.partition_max_size, self.right_table_last_partition_id, False)
                     # Reset left_table_rows to empty list
                     right_table_rows = []
+                    self.right_data_size = 0
                     
                     # Update last partition id
                     self.right_table_last_partition_id = right_last_partition_id
@@ -518,9 +538,7 @@ class NestedJoinExecutor(JoinExecutor):
             self.time_elapsed[key_name] = fetch_time
 
         print(f"Left in partition : {is_left_in_partitions}")
-        print(f"Left rows : {left_table_rows}")
         print(f"Right in partition : {is_right_in_partitions}")
-        print(f"Right rows : {right_table_rows}")
 
 
         # Do join based on whether data is partitioned. There are 4 possibilities
@@ -602,8 +620,6 @@ class NestedJoinExecutor(JoinExecutor):
 
 
     def _execute_both_direct(self, join_info, left_table_rows, right_table_rows):
-        # print("Left rows : ", left_table_rows, "\n")
-        # print("Right rows : ", right_table_rows)
 
         for left_row in left_table_rows:
             left_row_data = left_row["data"]
@@ -927,7 +943,6 @@ class NestedJoinExecutor(JoinExecutor):
             final_join_order = self.join_order
 
             tmp_path = os.path.join(cwd, 'tmpfolder')
-            print(tmp_path)
             final_res_path = os.path.join(tmp_path, str(final_join_order))
 
             for id in range(0,left_last_partition_id+1):

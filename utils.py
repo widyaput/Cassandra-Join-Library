@@ -56,6 +56,8 @@ def printJoinResult(filename, max_buffer_size=10000):
         print(f"Result with filename {filename} cannot be found!")
         return
 
+    print("\n\n")
+
     res_file = open(file_path, mode='r')
 
     # Try nested join decoder.. if doesn't work, use hash join decoder
@@ -65,8 +67,6 @@ def printJoinResult(filename, max_buffer_size=10000):
         row_read = row_read[:-1]
         row_read = json.loads(row_read)
         buffer.append(row_read)
-
-        print(buffer)
 
         if (len(buffer) == max_buffer_size):
             if (join_type == None):

@@ -141,10 +141,6 @@ class IntermediateDirectHashResult:
             build_key = (self.join_column_right, self.right_table)
             probe_key = (self.join_column, self.left_table)
 
-        # Printing for debug
-        print("Left no matching : ", self.no_match_left_rows)
-        print("Right no matching : ", self.no_match_right_rows)
-
         for key in self.hash_table:
             # Left list is ACTUALLY BUILD LIST
             build_list = self.hash_table[key][0]
@@ -153,7 +149,6 @@ class IntermediateDirectHashResult:
             
 
             if (self.join_type == "INNER"):
-                print("INNER")
                 if (len(build_list) == 0 or len(probe_list) == 0):
                     # No Result for current key
                     continue
@@ -445,9 +440,6 @@ class IntermediatePartitionedHashResult:
             # Gives no result, return empty hash table immediately
             return {}
 
-        print("\nLeft partition : ", left_partition)
-        print(f"Right partition : {right_partition}\n")
-
         # Process left table. Assume left table always be the Build Table
         if (left_partition != None):
             for left_row in left_partition:
@@ -474,7 +466,6 @@ class IntermediatePartitionedHashResult:
                 else :
                     partition_hash_table[key] = ([],[right_row])
 
-        print(f"Partition hash table : {partition_hash_table}")
 
         return partition_hash_table
 
@@ -486,9 +477,6 @@ class IntermediatePartitionedHashResult:
 
         left_joincol_key = (self.join_column, self.left_table)
         right_joincol_key = (self.join_column_right, self.right_table)
-
-        print("Left meta : ", self.left_table_meta)
-        print("Right meta : ", self.right_table_meta)
         
         for partition_id in all_partitions:
             
@@ -513,21 +501,18 @@ class IntermediatePartitionedHashResult:
                     
                 
                 if (self.join_type == "LEFT_OUTER" and right_list == []):
-                    print("\nMasuk left outer")
                     for left_row in left_list:
                         dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
                         merged = dict(list(left_row.items()) + list(dummy_right.items()))
                         partition_join_result.append(merged)
 
                 elif (self.join_type == "RIGHT_OUTER" and left_list == []):
-                    print("\nMasuk right outer")
                     for right_row in right_list:
                         dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
                         merged = dict(list(right_row.items()) + list(dummy_left.items()))
                         partition_join_result.append(merged)
 
                 elif (self.join_type == "FULL_OUTER"):
-                    print("\nMasuk fullouter bray")
                     if (left_list == []):
                         for right_row in right_list:
                             dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
@@ -549,7 +534,6 @@ class IntermediatePartitionedHashResult:
                                     partition_join_result.append(merged)
 
                 else :
-                    print(f"\nMasuknya else bray. Join type : {self.join_type}")
                     for left_row in left_list:
                         for right_row in right_list:
                             # Compare for double checking equality
@@ -560,8 +544,6 @@ class IntermediatePartitionedHashResult:
 
             # For each partition, flush into local disk
             next_join_order = self.join_order + 1
-
-            print(f"Partition join result : {partition_join_result}\n\n")
 
             result_hash_values = put_into_partition(partition_join_result, next_join_order, self.next_join_table, self.next_join_column, True)
 

@@ -8,13 +8,13 @@ keyspace_name = 'ecommerce'
 session = cluster.connect(keyspace_name)
 
 table1 = "user"
-table2 = "rating"
+table2 = "user_item_like"
 join_column = "userid"
 
 tableinfoL = TableInfo(table1, join_column)
 tableinfoR = TableInfo(table2, join_column)
 
-HashjoinExecutor(session, keyspace_name) \ 
+HashJoinExecutor(session, keyspace_name) \
     .rightJoin(tableinfoL, tableinfoR) \
     .execute() \
     .save_result("a_hash_3_result")

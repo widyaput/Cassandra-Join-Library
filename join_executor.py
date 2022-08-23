@@ -38,7 +38,11 @@ class JoinExecutor(ABC):
 
         # Set the maximum size of data (Byte) that can be placed into memory simultaneously
         # Currently is set to 80% of available memory
-        self.max_data_size = int(0.8 * psutil.virtual_memory().available)
+        self.max_data_size = int(0.25 * psutil.virtual_memory().available)
+        # self.max_data_size = megabyte_to_byte(250)
+
+        self.left_data_size = 0
+        self.right_data_size = 0
 
         # Save all join information, this info will be used to execute join
         self.joins_info = []
@@ -53,14 +57,14 @@ class JoinExecutor(ABC):
         self.save_partition_trace = True
 
         # Cassandra details
-        self.cassandra_fetch_size = 5
+        self.cassandra_fetch_size = 10000
         self.paging_state = {}
 
         # Save durations for each operation
         self.time_elapsed = {}
 
-    def get_size(self):
-        return asizeof.asizeof(self)
+    def get_data_size(self):
+        return self.left_data_size + self.right_data_size
 
 
     def join(self, leftTableInfo, rightTableInfo, join_operator = "="):

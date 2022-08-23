@@ -14,7 +14,7 @@ join_column = "email"
 tableinfoL = TableInfo(table1, join_column)
 tableinfoR = TableInfo(table2, join_column)
 
-HashjoinExecutor(session, keyspace_name) \ 
+HashJoinExecutor(session, keyspace_name) \
     .leftJoin(tableinfoL, tableinfoR) \
     .execute() \
     .save_result("a_hash_2_result")

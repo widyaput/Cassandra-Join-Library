@@ -14,8 +14,8 @@ join_column = "email"
 tableinfoL = TableInfo(table1, join_column)
 tableinfoR = TableInfo(table2, join_column)
 
-NestedjoinExecutor(session, keyspace_name) \ 
-    .join(tableinfoL, tableinfoR) \
+NestedJoinExecutor(session, keyspace_name) \
+    .join(tableinfoL, tableinfoR, "=") \
     .execute() \
     .save_result("a_nested_1_result")
 

@@ -20,7 +20,7 @@ tableinfo1_R = TableInfo(table2, join_column)
 tableinfo2_L = TableInfo(table1, second_join_column)
 tableinfo2_R = TableInfo(table3, second_join_column)
 
-HashjoinExecutor(session, keyspace_name) \ 
+HashJoinExecutor(session, keyspace_name) \
     .fullOuterJoin(tableinfo1_L, tableinfo1_R) \
     .fullOuterJoin(tableinfo2_L, tableinfo2_R) \
     .execute() \
