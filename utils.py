@@ -175,17 +175,21 @@ def read_from_partition(join_order, partition_id, is_build):
     # Reformat data
     for idx in range(len(data)):
         curr_data = data[idx]
-        print(curr_data[:-1])
         data[idx] = json.loads(curr_data[:-1])
 
     data = jsonTupleKeyHashDecoder(data)
 
-    print("READ FROM PARTITION RESULT : ", data)
+    print(f"READ FROM PARTITION {partition_name}")
 
     return data
 
 
 def read_from_partition_nonhash(join_order, partition_id, is_left_table):
+    if (is_left_table):
+        print(f"Reading left partition with ID: {partition_id}")
+    else:
+        print(f"Reading right partition with ID: {partition_id}")
+
     cwd = os.getcwd()
     tmp_folder = "tmpfolder"
 
@@ -217,7 +221,6 @@ def read_from_partition_nonhash(join_order, partition_id, is_left_table):
     # Reformat data
     for idx in range(len(data)):
         curr_data = data[idx]
-        print(curr_data[:-1])
         data[idx] = json.loads(curr_data[:-1])
 
     data = jsonTupleKeyDecoder(data)
@@ -306,15 +309,17 @@ def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_p
 
 
     # Make partition
+    partition_size = 0
     for data_idx in range(len(data_page)):
         row = data_page[data_idx]
+        partition_size += asizeof.asizeof(row)
         partition_data.append(row)
         
         # Clear row to maintain memoru usage
         data_page[data_idx] = None
 
-        # TODO: THE PROBLEM IS HERE. MAX PARTITION SIZE IS TOO BIG FOR SMALL TEST CASE
-        if (asizeof.asizeof(partition_data) + last_partition_size >= max_partition_size):
+
+        if (partition_size + last_partition_size >= max_partition_size):
             # Flush into partition
             new_last_partition_id = last_partition_id + 1
             new_last_partition_name = str(new_last_partition_id)
@@ -341,6 +346,7 @@ def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_p
 
             # Empty the partition data
             partition_data = []
+            partition_size = 0
 
             # Increment last partition id and reset partition size
             last_partition_id = new_last_partition_id
@@ -382,6 +388,7 @@ def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_p
     f.close()
 
     partition_data = []
+    partition_size = 0
     
     # Increment last partition id
     last_partition_id = new_last_partition_id
@@ -390,6 +397,10 @@ def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_p
 
 
 def update_partition_nonhash(partition_data, join_order, partition_id, is_left_table):
+    if (is_left_table):
+        print(f"Updating left partition {partition_id}")
+    else:
+        print(f"Updating right partition {partition_id}")
 
     cwd = os.getcwd()
 

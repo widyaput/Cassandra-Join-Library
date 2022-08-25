@@ -1,5 +1,5 @@
 from cassandra.cluster import Cluster
-from hash_join import *
+from nested_join import *
 from file_utils import *
 from utils import *
 
@@ -20,11 +20,11 @@ tableinfo1_R = TableInfo(table2, join_column)
 tableinfo2_L = TableInfo(table1, second_join_column)
 tableinfo2_R = TableInfo(table3, second_join_column)
 
-executor = HashJoinExecutor(session, keyspace_name) \
+executor = NestedJoinExecutor(session, keyspace_name) \
     .fullOuterJoin(tableinfo1_L, tableinfo1_R) \
     .fullOuterJoin(tableinfo2_L, tableinfo2_R) \
     .execute() \
-    .save_result("b_dummy_3_result")
+    .save_result("b_dummy_6_result")
 
 executor.get_time_elapsed()
 

@@ -1,4 +1,4 @@
-CREATE KEYSPACE dummy
+CREATE KEYSPACE ecommerce
   WITH REPLICATION = { 
    'class' : 'SimpleStrategy', 
    'replication_factor' : 1 
@@ -46,6 +46,12 @@ INSERT INTO ecommerce.payment_received (payment_id, email, amount_paid, status)
 VALUES (3, 'outer_agent@bot.com', 7007, 'UNKNOWN');
 
 INSERT INTO ecommerce.user (userid, email, name) 
+VALUES (1, 'rafi.adyatma47@gmail.com', 'Rafi Adyatma');
+
+INSERT INTO ecommerce.user (userid, email) 
+VALUES (2, 'user2@bot.com');
+
+INSERT INTO ecommerce.user (userid, email, name) 
 VALUES (3, 'adnan.wick@yahoo.com', 'Adnan W');
 
 INSERT INTO ecommerce.user (userid, email, name) 
@@ -67,16 +73,16 @@ INSERT INTO ecommerce.user (userid, email, name)
 VALUES (9, 'raissa.azz@gmail.com', 'Raissa Azzahra');
 
 INSERT INTO ecommerce.item (itemid, name, description)
-VALUES (1, 'Keyboard', 'Mechanical Gaming Keyboard')
+VALUES (1, 'Keyboard', 'Mechanical Gaming Keyboard');
 
 INSERT INTO ecommerce.item (itemid, name, description)
-VALUES (2, 'Nvidia GPU', 'Asus RTX 3080 GPU')
+VALUES (2, 'Nvidia GPU', 'Asus RTX 3080 GPU');
 
 INSERT INTO ecommerce.user_item_like (userid, itemid, rating)
-VALUES (1, 1, 4)
+VALUES (1, 1, 4);
 
 INSERT INTO ecommerce.user_item_like (userid, itemid, rating)
-VALUES (1, 2, 3)
+VALUES (1, 2, 3);
 
 INSERT INTO ecommerce.user_item_like (userid, itemid, rating)
-VALUES (2, 1, 5)
+VALUES (2, 1, 5);

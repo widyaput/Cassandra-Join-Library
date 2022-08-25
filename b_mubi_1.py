@@ -19,5 +19,4 @@ executor = HashJoinExecutor(session, keyspace_name) \
     .execute() \
     .save_result("b_dummy_1_result")
 
-# printJoinResult("b_dummy_1_result")
 executor.get_time_elapsed()

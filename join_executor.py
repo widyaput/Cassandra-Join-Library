@@ -39,7 +39,6 @@ class JoinExecutor(ABC):
         # Set the maximum size of data (Byte) that can be placed into memory simultaneously
         # Currently is set to 80% of available memory
         self.max_data_size = int(0.25 * psutil.virtual_memory().available)
-        # self.max_data_size = megabyte_to_byte(250)
 
         self.left_data_size = 0
         self.right_data_size = 0

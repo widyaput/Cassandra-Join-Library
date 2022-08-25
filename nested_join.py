@@ -15,6 +15,7 @@ class NestedJoinExecutor(JoinExecutor):
         super().__init__(session, keyspace_name)
 
         self.current_result = []
+        self.current_result_size = 0
         
         # Left table partition ids
         self.left_table_last_partition_id = -1
@@ -23,10 +24,11 @@ class NestedJoinExecutor(JoinExecutor):
 
         # Maximum size of partition of tuples
         self.partition = []
-        self.partition_max_size = megabyte_to_byte(50)
+        self.partition_curr_size = 0
+        self.partition_max_size = megabyte_to_byte(25)
 
         # Override force partition
-        self.force_partition = False
+        self.force_partition = True
 
         # To force save partition trace
         self.save_partition_trace = False
@@ -35,11 +37,17 @@ class NestedJoinExecutor(JoinExecutor):
         # self.max_data_size = 0
 
 
-    def get_left_size():
+    def get_left_size(self):
         return self.left_data_size
 
-    def get_right_size():
+    def get_right_size(self):
         return self.right_data_size
+
+    def get_result_size(self):
+        return self.current_result_size
+
+    def get_data_size(self):
+        return self.left_data_size + self.right_data_size + self.current_result_size
 
 
     def execute(self):
@@ -288,6 +296,7 @@ class NestedJoinExecutor(JoinExecutor):
             
             else :
                 # Handle rows in the first page
+                total_rows = 0
                 rows_fetched = 0
                 for row in results:
                     # Change the dict structure, so each column has parent table
@@ -308,6 +317,7 @@ class NestedJoinExecutor(JoinExecutor):
                         "flag" : 0
                     })
                     rows_fetched += 1
+                    total_rows += 1
 
                     if (rows_fetched == self.cassandra_fetch_size):
                         self.paging_state[left_table_name] = results.paging_state
@@ -317,6 +327,7 @@ class NestedJoinExecutor(JoinExecutor):
 
                 # Handle the rest of the rows
                 while (results.has_more_pages):
+                    print(f"Fetching next page of left table. Current rows: {total_rows}. Left data size: {self.left_data_size}")
                     rows_fetched = 0
                     ps = self.paging_state[left_table_name]
 
@@ -344,6 +355,8 @@ class NestedJoinExecutor(JoinExecutor):
                         })
 
                         rows_fetched += 1
+                        total_rows += 1
+
                         if (rows_fetched == self.cassandra_fetch_size):
                             self.paging_state[left_table_name] = results.paging_state
                             break
@@ -352,6 +365,7 @@ class NestedJoinExecutor(JoinExecutor):
                     
                     # SIZE Checking: Checking done per page
                     if ((self.max_data_size / 2 <= self.get_left_size()) or is_data_in_partitions or self.force_partition):
+                        print("Left data is too big. Put into partition")
                         is_data_in_partitions = True
 
                         left_last_partition_id = put_into_partition_nonhash(left_table_rows, self.join_order, self.partition_max_size, self.left_table_last_partition_id, True)
@@ -379,11 +393,15 @@ class NestedJoinExecutor(JoinExecutor):
 
                 # Reset current result
                 self.current_result = []
+                self.current_result_size = 0
+
+        print("Left table successfully fetched")
 
         return left_table_rows, is_data_in_partitions, left_last_partition_id
 
 
     def _get_right_data(self, right_table, right_alias):
+        print("Fetch right table")
         # Only get data when fit to memory. Otherwise, load in join execution function
         session = self.session
 
@@ -428,6 +446,7 @@ class NestedJoinExecutor(JoinExecutor):
 
         else :
             # Handle rows in first page
+            total_rows = 0
             rows_fetched = 0
             for row in results:
                 # Change dict structure and add flag
@@ -445,15 +464,17 @@ class NestedJoinExecutor(JoinExecutor):
                     "flag" : 0
                 })
                 rows_fetched += 1
+                total_rows += 1
 
                 if (rows_fetched == self.cassandra_fetch_size):
                     self.paging_state[right_table_name] = results.paging_state
                     break
 
-                self.right_data_size += asize.asizeof(row)
+                self.right_data_size += asizeof.asizeof(row)
 
             # Handle the rest of the rows
             while (results.has_more_pages):
+                print(f"Fetching next page of right table. Current rows: {total_rows}. Object size: {asizeof.asizeof(right_table_rows)}")
                 rows_fetched = 0
                 ps = self.paging_state[right_table_name]
 
@@ -481,6 +502,7 @@ class NestedJoinExecutor(JoinExecutor):
                     })
 
                     rows_fetched += 1
+                    total_rows += 1
                     if (rows_fetched == self.cassandra_fetch_size):
                         self.paging_state[right_table_name] = results.paging_state
                         break
@@ -489,6 +511,7 @@ class NestedJoinExecutor(JoinExecutor):
                 
                 # SIZE Checking: Check size used per page
                 if ((self.max_data_size / 2 <= self.get_right_size()) or is_data_in_partitions or self.force_partition):
+                    print("Right data too big. Put into partition")
                     is_data_in_partitions = True
 
                     right_last_partition_id = put_into_partition_nonhash(right_table_rows, self.join_order, self.partition_max_size, self.right_table_last_partition_id, False)
@@ -499,6 +522,7 @@ class NestedJoinExecutor(JoinExecutor):
                     # Update last partition id
                     self.right_table_last_partition_id = right_last_partition_id
 
+        print("Right table successfully fetched")
 
         return right_table_rows, is_data_in_partitions, right_last_partition_id
 
@@ -564,16 +588,20 @@ class NestedJoinExecutor(JoinExecutor):
             # Update result last partition id and empty the flushed partition
             self.result_last_partition_id = result_last_partition_id
             self.partition = []
+            self.partition_curr_size = 0
 
         return
 
 
     def _execute_both_partition(self, join_info):
+        rows_executed = 0
         for left_partition_id in range(self.left_table_last_partition_id+1):
+            print("Change left partition")
             left_table_rows = read_from_partition_nonhash(self.join_order, left_partition_id, True)
 
             
             for right_partition_id in range(self.right_table_last_partition_id+1):
+                print("Change right partition")
                 right_table_rows = read_from_partition_nonhash(self.join_order, right_partition_id, False)
 
                 for left_row in left_table_rows:
@@ -583,9 +611,12 @@ class NestedJoinExecutor(JoinExecutor):
                         # Do join based on join type and join condition
                         merged_row = self._merge_row(join_info, left_row_data, right_row_data)
 
+                        rows_executed += 1
+                        if (rows_executed % 10000000 == 0):
+                            print(f"{rows_executed} rows have been executed")
+
                         if (merged_row == None):
                             continue
-                        
 
                         # Current result
                         join_order = join_info['join_order']
@@ -594,7 +625,7 @@ class NestedJoinExecutor(JoinExecutor):
                         # Update the flag for both left row and right row
                         left_row["flag"] = 1
                         right_row["flag"] = 1
-                        
+
 
                 # Update right partition in local
                 update_partition_nonhash(right_table_rows, self.join_order, right_partition_id, False)
@@ -620,7 +651,7 @@ class NestedJoinExecutor(JoinExecutor):
 
 
     def _execute_both_direct(self, join_info, left_table_rows, right_table_rows):
-
+        rows_executed = 0
         for left_row in left_table_rows:
             left_row_data = left_row["data"]
             for right_row in right_table_rows:
@@ -630,6 +661,10 @@ class NestedJoinExecutor(JoinExecutor):
 
                 if (merged_row == None):
                     continue
+
+                rows_executed += 1
+                if (rows_executed % 10000 == 0):
+                    print(f"{rows_executed} rows have been executed")
 
                 # Current result
                 join_order = join_info['join_order']
@@ -655,6 +690,7 @@ class NestedJoinExecutor(JoinExecutor):
         return
 
     def _execute_right_partition(self, join_info, left_table_rows):
+        rows_executed = 0
         for left_row in left_table_rows:
             left_row_data = left_row["data"]
 
@@ -668,6 +704,10 @@ class NestedJoinExecutor(JoinExecutor):
 
                     if (merged_row == None):
                         continue
+                    
+                    rows_executed += 1
+                    if (rows_executed % 10000 == 0):
+                        print(f"{rows_executed} rows have been executed")
 
                     # Current result
                     join_order = join_info['join_order']
@@ -697,6 +737,7 @@ class NestedJoinExecutor(JoinExecutor):
 
 
     def _execute_left_partition(self, join_info, right_table_rows):
+        rows_executed = 0
         for left_partition_id in range(self.left_table_last_partition_id+1):
             left_table_rows = read_from_partition_nonhash(self.join_order, left_partition_id, True)
 
@@ -709,6 +750,10 @@ class NestedJoinExecutor(JoinExecutor):
 
                     if (merged_row == None):
                         continue
+
+                    rows_executed += 1
+                    if (rows_executed % 10000 == 0):
+                        print(f"{rows_executed} rows have been executed")
 
                     # Current result
                     join_order = join_info['join_order']
@@ -840,20 +885,26 @@ class NestedJoinExecutor(JoinExecutor):
             self.current_result.append(merged_row)
 
             # If size of object is too big, flush result
-            if (self.get_size() >= self.max_data_size):
+            if (self.get_data_size() >= self.max_data_size):
                 result_last_partition_id = put_into_partition_nonhash(self.current_result, next_join_order, self.partition_max_size, self.result_last_partition_id, True)
 
                 # Update on result partition id and empty the current result
                 self.result_last_partition_id = result_last_partition_id
                 self.current_result = []
+                self.current_result_size = 0
 
         else : # Some result is in partition
             # Add to self.partition then flush when it is big enough
+            self.partition_curr_size += asizeof.asizeof(merged_row)
             self.partition.append(merged_row)
 
-            if (asizeof.asizeof(self.partition) >= self.partition_max_size):
+            if (self.partition_curr_size >= self.partition_max_size):
                 result_last_partition_id = put_into_partition_nonhash(self.partition, next_join_order, self.partition_max_size, self.result_last_partition_id, True)
                 self.result_last_partition_id = result_last_partition_id
+
+                # Reset
+                self.partition = []
+                self.partition_curr_size = 0
 
         return
 

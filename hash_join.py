@@ -369,7 +369,6 @@ class HashJoinExecutor(JoinExecutor):
 
             else :
                 print(f"Left table for join order {self.join_order} will be fetched from memory")
-                print(self.current_result)
                 left_table_rows = self.current_result
                 self.left_data_size = asizeof.asizeof(left_table_rows)
                 
