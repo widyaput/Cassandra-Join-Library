@@ -1,9 +1,9 @@
 import psutil
 from pympler import asizeof
 
-from commands import *
-from utils import *
-from math_utils import *
+from cassandra_joinlib.commands import *
+from cassandra_joinlib.utils import *
+from cassandra_joinlib.math_utils import *
 
 from abc import ABC, abstractmethod
 from cassandra.query import dict_factory

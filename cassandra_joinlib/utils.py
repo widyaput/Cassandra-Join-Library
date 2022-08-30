@@ -5,7 +5,7 @@ import json
 from pympler import asizeof
 from tabulate import tabulate
 
-from file_utils import *
+from cassandra_joinlib.file_utils import *
 
 
 # K is the biggest prime in the first million

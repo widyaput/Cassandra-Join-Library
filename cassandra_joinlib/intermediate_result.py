@@ -1,7 +1,7 @@
 import json
 from pympler import asizeof
 
-from utils import *
+from cassandra_joinlib.utils import *
 
 global NULL_DATA
 NULL_DATA = None

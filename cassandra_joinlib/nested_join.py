@@ -3,12 +3,12 @@ import os
 import time
 from pympler import asizeof
 
-from commands import *
-from utils import *
-from math_utils import *
+from cassandra_joinlib.commands import *
+from cassandra_joinlib.utils import *
+from cassandra_joinlib.math_utils import *
 
 from cassandra.query import dict_factory, SimpleStatement
-from join_executor import JoinExecutor
+from cassandra_joinlib.join_executor import JoinExecutor
 
 class NestedJoinExecutor(JoinExecutor):
     def __init__(self, session, keyspace_name):

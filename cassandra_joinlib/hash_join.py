@@ -2,13 +2,13 @@ import psutil
 import time
 from pympler import asizeof
 
-from commands import *
-from intermediate_result import IntermediateDirectHashResult, IntermediatePartitionedHashResult
-from utils import *
-from math_utils import *
+from cassandra_joinlib.commands import *
+from cassandra_joinlib.intermediate_result import IntermediateDirectHashResult, IntermediatePartitionedHashResult
+from cassandra_joinlib.utils import *
+from cassandra_joinlib.math_utils import *
 
 from cassandra.query import dict_factory, SimpleStatement
-from join_executor import JoinExecutor
+from cassandra_joinlib.join_executor import JoinExecutor
 
 class HashJoinExecutor(JoinExecutor):
     def __init__(self, session, keyspace_name):
