@@ -185,10 +185,10 @@ def read_from_partition(join_order, partition_id, is_build):
 
 
 def read_from_partition_nonhash(join_order, partition_id, is_left_table):
-    if (is_left_table):
-        print(f"Reading left partition with ID: {partition_id}")
-    else:
-        print(f"Reading right partition with ID: {partition_id}")
+    # if (is_left_table):
+    #     print(f"Reading left partition with ID: {partition_id}")
+    # else:
+    #     print(f"Reading right partition with ID: {partition_id}")
 
     cwd = os.getcwd()
     tmp_folder = "tmpfolder"
@@ -397,10 +397,10 @@ def put_into_partition_nonhash(data_page, join_order, max_partition_size, last_p
 
 
 def update_partition_nonhash(partition_data, join_order, partition_id, is_left_table):
-    if (is_left_table):
-        print(f"Updating left partition {partition_id}")
-    else:
-        print(f"Updating right partition {partition_id}")
+    # if (is_left_table):
+    #     print(f"Updating left partition {partition_id}")
+    # else:
+    #     print(f"Updating right partition {partition_id}")
 
     cwd = os.getcwd()
 

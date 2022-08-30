@@ -28,7 +28,7 @@ class NestedJoinExecutor(JoinExecutor):
         self.partition_max_size = megabyte_to_byte(25)
 
         # Override force partition
-        self.force_partition = True
+        self.force_partition = False
 
         # To force save partition trace
         self.save_partition_trace = False
@@ -598,11 +598,13 @@ class NestedJoinExecutor(JoinExecutor):
         for left_partition_id in range(self.left_table_last_partition_id+1):
             print("Change left partition")
             left_table_rows = read_from_partition_nonhash(self.join_order, left_partition_id, True)
+            should_update_left_partition = False
 
             
             for right_partition_id in range(self.right_table_last_partition_id+1):
                 print("Change right partition")
                 right_table_rows = read_from_partition_nonhash(self.join_order, right_partition_id, False)
+                should_update_right_partition = False
 
                 for left_row in left_table_rows:
                     left_row_data = left_row["data"]
@@ -612,11 +614,16 @@ class NestedJoinExecutor(JoinExecutor):
                         merged_row = self._merge_row(join_info, left_row_data, right_row_data)
 
                         rows_executed += 1
-                        if (rows_executed % 10000000 == 0):
+                        if (rows_executed % 100000 == 0):
                             print(f"{rows_executed} rows have been executed")
 
                         if (merged_row == None):
                             continue
+
+                        if (not should_update_left_partition):
+                            should_update_left_partition = True
+                        if (not should_update_right_partition):
+                            should_update_right_partition = True
 
                         # Current result
                         join_order = join_info['join_order']
@@ -628,11 +635,13 @@ class NestedJoinExecutor(JoinExecutor):
 
 
                 # Update right partition in local
-                update_partition_nonhash(right_table_rows, self.join_order, right_partition_id, False)
+                if (should_update_right_partition):
+                    update_partition_nonhash(right_table_rows, self.join_order, right_partition_id, False)
 
 
             # Update left partition in local
-            update_partition_nonhash(left_table_rows, self.join_order, left_partition_id, True)
+            if (should_update_left_partition):
+                update_partition_nonhash(left_table_rows, self.join_order, left_partition_id, True)
 
 
         # Flush the no matched rows for outer joins
@@ -663,7 +672,7 @@ class NestedJoinExecutor(JoinExecutor):
                     continue
 
                 rows_executed += 1
-                if (rows_executed % 10000 == 0):
+                if (rows_executed % 100000 == 0):
                     print(f"{rows_executed} rows have been executed")
 
                 # Current result
@@ -696,18 +705,22 @@ class NestedJoinExecutor(JoinExecutor):
 
             for right_partition_id in range(self.right_table_last_partition_id+1):
                 right_table_rows = read_from_partition_nonhash(self.join_order, right_partition_id, False)
+                should_update_right_partition = False
 
                 for right_row in right_table_rows:
                     right_row_data = right_row["data"]
                     # Do join based on join type and join condition
                     merged_row = self._merge_row(join_info, left_row_data, right_row_data)
 
+                    rows_executed += 1
+                    if (rows_executed % 100000 == 0):
+                        print(f"{rows_executed} rows have been executed")
+
                     if (merged_row == None):
                         continue
-                    
-                    rows_executed += 1
-                    if (rows_executed % 10000 == 0):
-                        print(f"{rows_executed} rows have been executed")
+                
+                    if (not should_update_right_partition):
+                        should_update_right_partition = True
 
                     # Current result
                     join_order = join_info['join_order']
@@ -719,7 +732,8 @@ class NestedJoinExecutor(JoinExecutor):
 
 
                 # Update right partition in local
-                update_partition_nonhash(right_table_rows, self.join_order, right_partition_id, False)
+                if (should_update_right_partition):
+                    update_partition_nonhash(right_table_rows, self.join_order, right_partition_id, False)
         
         # Flush the no matched rows for outer joins
         join_type = join_info['join_type']
@@ -740,6 +754,7 @@ class NestedJoinExecutor(JoinExecutor):
         rows_executed = 0
         for left_partition_id in range(self.left_table_last_partition_id+1):
             left_table_rows = read_from_partition_nonhash(self.join_order, left_partition_id, True)
+            should_update_left_partition = False
 
             for left_row in left_table_rows:
                 left_row_data = left_row["data"]
@@ -748,12 +763,16 @@ class NestedJoinExecutor(JoinExecutor):
                     # Do join based on join type and join condition
                     merged_row = self._merge_row(join_info, left_row_data, right_row_data)
 
+
+                    rows_executed += 1
+                    if (rows_executed % 100000 == 0):
+                        print(f"{rows_executed} rows have been executed")
+
                     if (merged_row == None):
                         continue
 
-                    rows_executed += 1
-                    if (rows_executed % 10000 == 0):
-                        print(f"{rows_executed} rows have been executed")
+                    if (not should_update_left_partition):
+                        should_update_left_partition = True
 
                     # Current result
                     join_order = join_info['join_order']
@@ -765,7 +784,8 @@ class NestedJoinExecutor(JoinExecutor):
                     
         
             # Update left partition in local
-            update_partition_nonhash(left_table_rows, self.join_order, left_partition_id, True)
+            if (should_update_left_partition):
+                update_partition_nonhash(left_table_rows, self.join_order, left_partition_id, True)
 
         # Flush the no matched rows for outer joins
         join_type = join_info['join_type']

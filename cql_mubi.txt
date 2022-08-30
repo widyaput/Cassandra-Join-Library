@@ -6,6 +6,12 @@ CREATE KEYSPACE mubi
    'replication_factor' : 1 
   };
 
+CREATE KEYSPACE mubi_medium
+  WITH REPLICATION = { 
+   'class' : 'SimpleStrategy', 
+   'replication_factor' : 1 
+  };
+
 CREATE TABLE list (
     user_id int,
     list_id int,

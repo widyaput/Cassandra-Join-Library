@@ -176,7 +176,6 @@ class JoinExecutor(ABC):
         print(f"Fetch Time: {fetch_time} s")
         print(f"Join without fetch time: {join_without_fetch} s")
         print(f"Join total time: {join_time} s")
-        print(f"Total time elapsed: {total_time} s\n")
 
         return self
 
