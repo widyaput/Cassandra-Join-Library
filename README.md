@@ -31,7 +31,11 @@ It is actually pretty simple to use this library, this is the general steps for 
     > HashJoinExecutor(session, keyspace_name).join(left_table_info, right_table_info)
     > ```
 5. Each of the join function returns join executor itself, so you may add a chained join operation like this:
-    > `NestedJoinExecutor(session, keyspace_name).join(left_table_info, right_table_info, "<").fullOuterJoin(left_table_info_2, right_table_info2, "=")`
+    > ```
+    > NestedJoinExecutor(session, keyspace_name) \
+    > .join(left_table_info, right_table_info, "<") \
+    > .fullOuterJoin(left_table_info_2, right_table_info2, "=")
+    > ```
 6. After you add join operation/operations to the executor, it actually queue the join command(s). You may execute the join operation when you think you are ready by using `.execute()` from the join executor and do not forget to save the join result with `.save_result(filename)`.
     > Example: 
     > ```
