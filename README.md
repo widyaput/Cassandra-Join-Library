@@ -1,6 +1,6 @@
 # Cassandra-Join-Library
 Cassandra Join Operation Extension for Python. Client-sided and runs on single machine.
-### Latest Version : 0.1.5
+### Latest Version : 0.2.0
 
 Requirements :
 1. Python >= 3.7
@@ -43,13 +43,32 @@ It is actually pretty simple to use this library, this is the general steps for 
     > Note that the result will be saved in `.txt` file in JSON Format
 
 7. Run the python script and wait until it finishes execution. 
-8. You may also print the join result by using `printJoinResult(filename, max_buffer_size)` which can be imported from `cassandra_joinlib.utils`. Param `max_buffer_size` is the number of rows that will be printed per `tabulate` and has `10000` as a default value. 
+8. You may also print the join result by using `printJoinResult(filename, max_buffer_size)` which can be imported from `cassandra_joinlib.utils`. Param `max_buffer_size` is the number of rows that will be printed per `tabulate` and has `10000` as a default value. Print function should be called after `.execute()` function.
 9. That's it, you're done 🥳 🥳 🥳
+---
 
-
+Hey... you can also get join execution time with `.get_time_elapsed()` called on the join executor after `.execute()` function.
 ## Important things you need to know
 This library executes any chained-join with left deep join method. It means that result of first join operation would be the left table of the second join operation, the result of second join operation would be the left table of the third join operation, and so on...
-![Image](https://drive.google.com/file/d/1jbOmv1iE9yDrtqluuXZKglLV6wCJOli9/preview)
+![Left deep join tree](/assets/leftdeeptree.png)
+
+For NON-first join, make sure you use the result from the previous join as left table. 
+> Example:
+> ```
+> tableinfo1_L = TableInfo("user", "email")
+> tableinfo1_R = TableInfo("payment_received", "email")
+>
+> tableinfo2_L = TableInfo("user", "userid")
+> tableinfo2_R = TableInfo("user_item_like", "userid")
+>
+> HashJoinExecutor(session, keyspace_name) \
+> .fullOuterJoin(tableinfo1_L, tableinfo1_R) \
+> .join(tableinfo2_L, tableinfo2_R) \
+> .execute() \
+> .save_result("chained_hash_join")
+> ```
+
+Notice that on left table info for second join operation `tableinfo2_L`, we can use `user` table since `user` and `payment_received` are in the result of the previous join operation.
 
 ## Cautions and Notes
 `cassandra-joinlib` will save some/all the incoming data from Cassandra due to the big size that cannot be fit into memory entirely. 
