@@ -1,6 +1,6 @@
 # Cassandra-Join-Library
 Cassandra Join Operation Extension for Python. Client-sided and runs on single machine.
-### Latest Version : 0.2.0
+### Latest Version : 0.3.0
 
 Requirements :
 1. Python >= 3.7

@@ -706,6 +706,16 @@ class HashJoinExecutor(JoinExecutor):
 
                 # Left table is build table by default
                 is_build_table = True
+
+                if (left_key == None):
+                    if (join_type == "INNER"):
+                        continue
+                    elif (join_type == "LEFT_OUTER"):
+                        intermediate_result.add_row_to_left_nomatch(row)
+                    elif (join_type == "RIGHT_OUTER"):
+                        continue
+                    else :
+                        intermediate_result.add_row_to_left_nomatch(row)
                 
                 # Use all rows to build hash table
                 intermediate_result.add_row_to_intermediate(row, is_build_table)
@@ -720,6 +730,16 @@ class HashJoinExecutor(JoinExecutor):
 
                 # Right table is probe table by default
                 is_build_table = False
+
+                if (right_key == None):
+                    if (join_type == "INNER"):
+                        continue
+                    elif (join_type == "LEFT_OUTER"):
+                        continue
+                    elif (join_type == "RIGHT_OUTER"):
+                        intermediate_result.add_row_to_right_nomatch(row)
+                    else:
+                        intermediate_result.add_row_to_right_nomatch(row)
 
                 # Check if key exists in hash table. Action based on join type
                 is_key_exists = intermediate_result.is_key_in_hashtable(right_key)
@@ -756,6 +776,16 @@ class HashJoinExecutor(JoinExecutor):
                 dict_key = (join_column_right, right_table_name)
                 right_key = row[dict_key]
 
+                if (right_key == None):
+                    if (join_type == "INNER"):
+                        continue
+                    elif (join_type == "LEFT_OUTER"):
+                        continue
+                    elif (join_type == "RIGHT_OUTER"):
+                        intermediate_result.add_row_to_right_nomatch(row)
+                    else:
+                        intermediate_result.add_row_to_right_nomatch(row)
+
                 # Now that the tables have been swap, right table is now a Build table
                 is_build_table = True
 
@@ -771,6 +801,16 @@ class HashJoinExecutor(JoinExecutor):
 
                 # Left table is build table by default
                 is_build_table = False
+
+                if (left_key == None):
+                    if (join_type == "INNER"):
+                        continue
+                    elif (join_type == "LEFT_OUTER"):
+                        intermediate_result.add_row_to_left_nomatch(row)
+                    elif (join_type == "RIGHT_OUTER"):
+                        continue
+                    else :
+                        intermediate_result.add_row_to_left_nomatch(row)
 
                 # Check if key exists in hash table. Action based on join type
                 is_key_exists = intermediate_result.is_key_in_hashtable(left_key)

@@ -1027,8 +1027,6 @@ class NestedJoinExecutor(JoinExecutor):
 
                 partition_file.close()
 
-            # TODO: Delete all tmpfiles after join operation
-
         
         else : # Final result is in memory (self.current_result), return immediately
             

@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: cassandra-joinlib
-Version: 0.2.0
+Version: 0.3.0
 Summary: Cassandra client-side join operation for Python
 Home-page: https://github.com/Rainburn/Cassandra-Join-Library
 Author: Rafi Adyatma
@@ -14,7 +14,7 @@ License-File: LICENSE
 
 # Cassandra-Join-Library
 Cassandra Join Operation Extension for Python. Client-sided and runs on single machine.
-### Latest Version : 0.2.0
+### Latest Version : 0.3.0
 
 Requirements :
 1. Python >= 3.7

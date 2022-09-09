@@ -414,12 +414,6 @@ class IntermediatePartitionedHashResult:
         self.left_table_meta = join_info['left_columns']
         self.right_table_meta = join_info['right_columns']
 
-        # # If next join column is None, therefore it is the final result
-        # # For final result, set next_join_column = join_column
-        # if (next_join_column == None):
-        #     self.next_join_column = join_info['join_column']
-        # else :
-        #     self.next_join_column = next_join_column
         self.next_join_column = next_join_info[0]
         self.next_join_table = next_join_info[1]
 
@@ -428,6 +422,10 @@ class IntermediatePartitionedHashResult:
 
         partition_hash_table = {}
         join_order = self.join_order
+
+        # Non-matching rows storage
+        no_match_left_rows = []
+        no_match_right_rows = []
 
         left_partition = read_from_partition(join_order, partition_num, True)
         right_partition = read_from_partition(join_order, partition_num, False)
@@ -445,6 +443,19 @@ class IntermediatePartitionedHashResult:
             for left_row in left_partition:
 
                 key = left_row[left_joincol_key]
+
+                if (key == None):
+                    if (self.join_type == "INNER"):
+                        continue
+                    elif (self.join_type == "LEFT_OUTER"):
+                        no_match_left_rows.append(left_row)
+                        continue
+                    elif (self.join_type == "RIGHT_OUTER"):
+                        continue
+                    else:
+                        no_match_left_rows.append(left_row)
+                        continue
+
                 if (key in partition_hash_table):
                     # There is already a key for that join column
                     partition_hash_table[key][0].append(left_row)
@@ -459,6 +470,19 @@ class IntermediatePartitionedHashResult:
             for right_row in right_partition:
 
                 key = right_row[right_joincol_key]
+
+                if (key == None):
+                    if (self.join_type == "INNER"):
+                        continue
+                    elif (self.join_type == "LEFT_OUTER"):
+                        continue
+                    elif (self.join_type == "RIGHT_OUTER"):
+                        no_match_right_rows.append(right_row)
+                        continue
+                    else:
+                        no_match_right_rows.append(right_row)
+                        continue
+
                 if (key in partition_hash_table):
                     # There is already a key for that join column
                     partition_hash_table[key][1].append(right_row)
@@ -467,7 +491,7 @@ class IntermediatePartitionedHashResult:
                     partition_hash_table[key] = ([],[right_row])
 
 
-        return partition_hash_table
+        return partition_hash_table, no_match_left_rows, no_match_right_rows
 
     def build_result(self, all_partitions):
 
@@ -483,7 +507,7 @@ class IntermediatePartitionedHashResult:
             # Hash table access 
             # partition_hash_table[key][0] for left rows
             # partition_hash_table[key][1] for right rows
-            partition_hash_table = self.process_partition_pair(partition_id)
+            partition_hash_table, no_match_left_rows, no_match_right_rows = self.process_partition_pair(partition_id)
             partition_join_result = []
 
             # Do the partition join based on join type
@@ -541,6 +565,18 @@ class IntermediatePartitionedHashResult:
                                 merged = dict(list(left_row.items()) + list(right_row.items()))
                                 partition_join_result.append(merged)
 
+            # Flush left and right rows
+            if (no_match_left_rows != []):
+                for left_row in no_match_left_rows:
+                    dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
+                    merged = dict(list(left_row.items()) + list(dummy_right.items()))
+                    partition_join_result.append(merged)
+
+            if (no_match_right_rows != []):
+                for right_row in no_match_right_rows:
+                    dummy_left = construct_null_columns(self.left_table, self.left_table_meta)
+                    merged = dict(list(right_row.items()) + list(dummy_left.items()))
+                    partition_join_result.append(merged)
 
             # For each partition, flush into local disk
             next_join_order = self.join_order + 1
