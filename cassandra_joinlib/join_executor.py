@@ -113,6 +113,19 @@ class JoinExecutor(ABC):
 
         return self
 
+    # def where(self, expressions: Union[FilterExpression, FilterOperators]):
+    #     command = FilterCommand(expressions)
+    #     self.command_queue.append(command)
+    #
+    #     return self
+
+    def filter_by(self, conditions: Condition):
+        command = FilterCommands(conditions)
+        self.command_queue.append(command)
+
+        return self
+        
+
     def selects_validation(self):
         # Can only do select when all join columns are selected
 
@@ -196,6 +209,10 @@ class JoinMetadata:
         # Columns would be dict, key is table name and values are column names
         self.columns = {}
 
+        self.pk_columns = {}
+
+        self.clustering_columns = {}
+
     def add_table(self, table_name):
         if (self.is_table_exists(table_name)):
             return
@@ -205,6 +222,12 @@ class JoinMetadata:
         if (not table_name in self.columns):
             # Columns of table saved in LIST
             self.columns[table_name] = []
+
+        if (not table_name in self.pk_columns):
+            self.pk_columns[table_name] = []
+
+        if (not table_name in self.clustering_columns):
+            self.clustering_columns[table_name] = []
 
     def is_table_exists(self, table_name):
         if (table_name in self.tables):
@@ -221,12 +244,36 @@ class JoinMetadata:
     def add_one_column(self, table_name, column_name):
         self.columns[table_name].append(column_name)
         return
+    
+    def add_pk_column(self, table_name: str, column: str):
+        self.pk_columns[table_name].append(column)
+
+    def add_clustering_column(self, table_name: str, column: str):
+        self.clustering_columns[table_name].append(column)
 
     def is_column_exists(self, table_name, column_name):
-        if (not table_name in self.columns):
+        return self.__check_column__(table_name, column_name)
+
+    def is_pk_exists(self, table_name: str, column_name: str):
+        return self.__check_column__(table_name, column_name, 'pk')
+
+    def is_clusterkey_exists(self, table_name: str, column_name: str):
+        return self.__check_column__(table_name, column_name, "cluster")
+
+    def __check_column__(self, table_name: str, column_name: str, type: str = ''):
+        columns = None
+        if type == '':
+            columns = self.columns
+        if type == 'pk':
+            columns = self.pk_columns
+        if type == 'cluster':
+            columns = self.clustering_columns
+        assert columns is not None
+
+        if (not table_name in columns):
             return False
-        
-        if (not column_name in self.columns[table_name]):
+
+        if (not column_name in columns[table_name]):
             return False
         
         return True

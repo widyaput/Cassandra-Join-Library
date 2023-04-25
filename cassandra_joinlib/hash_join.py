@@ -25,6 +25,7 @@ class HashJoinExecutor(JoinExecutor):
 
         # FOR TESTING USAGE
         # self.max_data_size = 0
+        self.filter_commands: List[FilterCommand] = []
 
 
     def execute(self):
@@ -47,7 +48,113 @@ class HashJoinExecutor(JoinExecutor):
                 else :
                     self.selected_cols[table] = columns.union(self.selected_cols[table])            
 
+            elif (isinstance(command, FilterCommands)):
+                def parseFilter(condition: Condition, reversed: bool = False):
+                    if (condition.is_base()):
+                        # cek apakah operasinya mengikuti aturan dari cql where clause
+                        # UPDATE: skip dlu ah yg penting bisa dlu
+                        if not isinstance(condition.lhs, Condition) and not isinstance(condition.rhs, Condition):
+                            if (isinstance(condition.lhs, str)):
+                                table_name, column = condition.lhs.split('.')
+                                if self.join_metadata.is_table_exists(table_name) \
+                                    and self.join_metadata.is_column_exists(table_name, column):
+                                        found = False
+                                        self.table_query[table_name] = self.table_query[table_name].removesuffix('ALLOW FILTERING')
+                                        for info in self.joins_info:
+                                            if (
+                                                (
+                                                    info["left_table"] == table_name and
+                                                    info["join_column"] == column
+                                                ) or (
+                                                    info["right_table"] == table_name and
+                                                    info["join_column_right"] == column
+                                                    )
+                                                ):
+                                                if not ("where" in self.table_query[table_name]):
+                                                    self.table_query[table_name] += " where "
+                                                else:
+                                                    self.table_query[table_name] += " or "
+                                                
+                                                self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} {str(condition.rhs)}"
+                                                found = True
 
+                                        if not found and not "*" in self.table_query[table_name]:
+                                            query = self.table_query[table_name]
+                                            idx = query.index("FROM") 
+                                            self.table_query[table_name] = query[:idx] + column + " " + query[idx:]
+                                        
+                                        self.table_query[table_name] += "ALLOW FILTERING"
+                            else:
+                                table_name, column = condition.rhs.split('.')
+                                if self.join_metadata.is_table_exists(table_name) \
+                                    and self.join_metadata.is_column_exists(table_name, column):
+                                        found = False
+                                        self.table_query[table_name] = self.table_query[table_name].removesuffix('ALLOW FILTERING')
+                                        for info in self.joins_info:
+                                            if (
+                                                (
+                                                    info["left_table"] == table_name and
+                                                    info["join_column"] == column
+                                                ) or (
+                                                    info["right_table"] == table_name and
+                                                    info["join_column_right"] == column
+                                                    )
+                                                ):
+                                                if not ("where" in self.table_query[table_name]):
+                                                    self.table_query[table_name] += " where "
+                                                else:
+                                                    self.table_query[table_name] += " or "
+                                                
+                                                self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} {str(condition.lhs)}"
+                                                found = True
+
+                                        if not found and not "*" in self.table_query[table_name]:
+                                            query = self.table_query[table_name]
+                                            idx = query.index("FROM") 
+                                            self.table_query[table_name] = query[:idx] + column + " " + query[idx:]
+                                        
+                                        self.table_query[table_name] += "ALLOW FILTERING"
+                        
+                    else:
+                        if isinstance(condition.lhs, Condition):
+                            parseFilter(condition.lhs, condition.operator == "NOT")
+                        if isinstance(condition.rhs, Condition):
+                            parseFilter(condition.rhs, condition.operator == "NOT")
+                        
+                parseFilter(command.expressions, False)
+            # elif (isinstance(command, FilterCommand)):
+            #     def parseFilter(command: FilterCommand, lastOp: str, reversed: bool):
+            #         if isinstance(exp:= command.expressions, FilterExpression):
+            #             found = False
+            #             for info in self.joins_info:
+            #                 if (
+            #                     (
+            #                         info["left_table"] == exp.table.table_name and
+            #                         info["join_column"] == exp.column
+            #                     ) or (
+            #                         info["right_table"] == exp.table.table_name and
+            #                         info["join_column_right"] == exp.column
+            #                         )
+            #                     ):
+            #                     if not ("where" in self.table_query[exp.table.table_name]):
+            #                         self.table_query[exp.table.table_name] += " where "
+            #                     else:
+            #                         self.table_query[exp.table.table_name] += " or "
+            #                     
+            #                     self.table_query[exp.table.table_name] += f"{exp.column} {exp.operator} {exp.rhs}"
+            #                     found = True
+            #
+            #             if not found and not "*" in self.table_query[exp.table.table_name]:
+            #                 query = self.table_query[exp.table.table_name]
+            #                 idx = query.index("FROM") 
+            #                 self.table_query[exp.table.table_name] = query[:idx] + exp.column + " " + query[idx:]
+            #                 
+            #         else:
+            #             op = command.expressions
+            #             if (isinstance(op, Not)):
+            #                 for info in self.joins_info:
+            #                     if ()
+                    
 
             elif (command_type == "JOIN"):
                 if (selects_valid == None):
@@ -93,6 +200,7 @@ class HashJoinExecutor(JoinExecutor):
                 check_leftcols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{real_left_table}'"
                 check_rightcols_query = f"SELECT * FROM system_schema.columns where keyspace_name = '{self.keyspace}' AND table_name = '{real_right_table}'"
 
+                # nambah kolom table kiri di metadata
                 if (not is_lefttable_in_metadata):
                     left_meta_rows = session.execute(check_leftcols_query)
                     self.join_metadata.add_table(left_table)
@@ -100,7 +208,10 @@ class HashJoinExecutor(JoinExecutor):
                     for row in left_meta_rows:
                         column_name = row['column_name']
                         self.join_metadata.add_one_column(left_table, column_name)
+                        if row['kind'] == 'partition_key':
+                            self.join_metadata.add_pk_column(left_table, column_name)
         
+                # bikin query
                 if (not left_table in self.table_query):
                     if (left_table in self.selected_cols):
                         query = f"SELECT "
@@ -118,6 +229,7 @@ class HashJoinExecutor(JoinExecutor):
                         self.table_query[left_table] = query
 
                     else :
+                        # kenapa malah ambil semua kolom???
                         self.table_query[left_table] = f"SELECT * FROM {real_left_table}"
 
                 # Below are actions for Right table
@@ -128,6 +240,8 @@ class HashJoinExecutor(JoinExecutor):
                     for row in right_meta_rows:
                         column_name = row['column_name']
                         self.join_metadata.add_one_column(right_table, column_name)
+                        if row['kind'] == 'partition_key':
+                            self.join_metadata.add_pk_column(right_table, column_name)
 
                 
                 table_cols = self.join_metadata.get_columns_of_table(right_table)
@@ -501,6 +615,7 @@ class HashJoinExecutor(JoinExecutor):
         return right_table_rows, is_data_in_partitions, partition_ids
 
 
+    #TODO: read this
     def _decide_join(self, join_info, next_join_info):
         # Try to load data first in here, then decide how the join will be implemented
         # Directly or Partitioned
@@ -541,6 +656,7 @@ class HashJoinExecutor(JoinExecutor):
         else :
             self.time_elapsed[key_name] = fetch_time
 
+        print('halo sampai sini')
         # Do join based on whether partitions is used or not
         if (is_left_table_in_partitions and is_right_table_in_partitions):
             all_partition_ids = left_partition_ids.union(right_partition_ids)
