@@ -13,7 +13,7 @@ class JoinExecutor(ABC):
     def __init__(self, session, keyspace_name):
         # These attributes are about the DB from Cassandra
         self.session = session
-        self.session.row_factory = dict_factory
+        # self.session.row_factory = dict_factory
         self.keyspace = keyspace_name
 
         # Saving commands for Lazy execution

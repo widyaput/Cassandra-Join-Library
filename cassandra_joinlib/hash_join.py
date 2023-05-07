@@ -25,7 +25,7 @@ class HashJoinExecutor(JoinExecutor):
 
         # FOR TESTING USAGE
         # self.max_data_size = 0
-        self.filter_commands: List[FilterCommand] = []
+        self.filter_conditions: List[Condition] = []
 
 
     def execute(self):
@@ -74,16 +74,19 @@ class HashJoinExecutor(JoinExecutor):
                                                     self.table_query[table_name] += " where "
                                                 else:
                                                     self.table_query[table_name] += " or "
-                                                
-                                                self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} {str(condition.rhs)}"
+                                                if isinstance(condition.rhs, str):
+                                                    self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} '{str(condition.rhs)}'"
+                                                else:
+                                                    self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} {str(condition.rhs)}"
                                                 found = True
 
                                         if not found and not "*" in self.table_query[table_name]:
                                             query = self.table_query[table_name]
-                                            idx = query.index("FROM") 
-                                            self.table_query[table_name] = query[:idx] + column + " " + query[idx:]
+                                            if not(column in query):
+                                                idx = query.index("FROM") 
+                                                self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
                                         
-                                        self.table_query[table_name] += "ALLOW FILTERING"
+                                        self.table_query[table_name] += " ALLOW FILTERING"
                             else:
                                 table_name, column = condition.rhs.split('.')
                                 if self.join_metadata.is_table_exists(table_name) \
@@ -105,15 +108,19 @@ class HashJoinExecutor(JoinExecutor):
                                                 else:
                                                     self.table_query[table_name] += " or "
                                                 
-                                                self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} {str(condition.lhs)}"
+                                                if isinstance(condition.lhs, str):
+                                                    self.table_query[table_name] += f"{'NOT' if reversed else ''} '{str(condition.lhs)}'{condition.operator} {column}"
+                                                else:
+                                                    self.table_query[table_name] += f"{'NOT' if reversed else ''} '{str(condition.lhs)}'{condition.operator} {column}"
                                                 found = True
 
                                         if not found and not "*" in self.table_query[table_name]:
                                             query = self.table_query[table_name]
-                                            idx = query.index("FROM") 
-                                            self.table_query[table_name] = query[:idx] + column + " " + query[idx:]
+                                            if not(column in query):
+                                                idx = query.index("FROM") 
+                                                self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
                                         
-                                        self.table_query[table_name] += "ALLOW FILTERING"
+                                        self.table_query[table_name] += " ALLOW FILTERING"
                         
                     else:
                         if isinstance(condition.lhs, Condition):
@@ -122,6 +129,7 @@ class HashJoinExecutor(JoinExecutor):
                             parseFilter(condition.rhs, condition.operator == "NOT")
                         
                 parseFilter(command.expressions, False)
+                self.filter_conditions.append(command.expressions)
             # elif (isinstance(command, FilterCommand)):
             #     def parseFilter(command: FilterCommand, lastOp: str, reversed: bool):
             #         if isinstance(exp:= command.expressions, FilterExpression):
@@ -1004,6 +1012,15 @@ class HashJoinExecutor(JoinExecutor):
                 partition_lines = partition_file.readlines()
 
                 for line in partition_lines:
+                    data = json.loads(line)
+                    unsatisfied = False
+                    for condition in self.filter_conditions:
+                        condition.set_rows(data)
+                        if not condition:
+                            unsatisfied = True
+                            break
+                    if unsatisfied:
+                        continue
                     f_res.write(line)
 
                 partition_file.close()
@@ -1016,6 +1033,14 @@ class HashJoinExecutor(JoinExecutor):
             self.current_result = jsonTupleKeyHashEncoder(self.current_result)
 
             for row in self.current_result:
+                unsatisfied = False
+                for condition in self.filter_conditions:
+                    condition.rows = row
+                    if not condition:
+                        unsatisfied = True
+                        break
+                if unsatisfied:
+                    continue
                 f_res.write(json.dumps(row)+"\n")
 
         f_res.close()

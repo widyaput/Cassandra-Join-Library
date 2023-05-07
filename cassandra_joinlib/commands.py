@@ -69,6 +69,8 @@ class Condition():
         if self.operator == "IN":
             found = True
             assert(isinstance(self.rhs, List) or isinstance(self.rhs, Sequence))
+        if self.operator == "CONTAINS":
+            found = True
         if self.operator == 'NOT':
             found = True
         if self.operator == 'AND':
@@ -91,23 +93,25 @@ class Condition():
         return Condition(self, 'NOT', None)
     
     def __bool__(self):
-        if not isinstance(self.lhs, Condition) or not isinstance(self.rhs, Condition):
+        if not isinstance(self.lhs, Condition) and (not isinstance(self.rhs, Condition) and not self.rhs is None ):
             if self.rows is None:
-                raise Exception("Need to call evaluate first!")
+                raise Exception("Need to save rows first")
             raw_lhs = None
             raw_rhs = None
             if not isinstance(self.lhs, Condition):
                 raw_lhs = self.lhs
                 if (isinstance(self.lhs, str)):
-                    table_name, column = self.lhs.split('.')
-                    if column in self.rows:
-                        raw_lhs = self.rows[column][table_name]
+                    if '.' in self.lhs:
+                        table_name, column = self.lhs.split('.')
+                        if column in self.rows:
+                            raw_lhs = self.rows[column][table_name]
             if not isinstance(self.rhs, Condition):
                 raw_rhs = self.rhs
                 if (isinstance(self.rhs, str)):
-                    table_name, column = self.rhs.split('.')
-                    if column in self.rows:
-                        raw_rhs = self.rows[column][table_name]
+                    if '.' in self.rhs:
+                        table_name, column = self.rhs.split('.')
+                        if column in self.rows:
+                            raw_rhs = self.rows[column][table_name]
             assert(raw_lhs is not None)
             assert(raw_rhs is not None)
             if self.operator == ">":
@@ -123,6 +127,8 @@ class Condition():
             if self.operator == "IN":
                 assert(isinstance(raw_rhs, List) or isinstance(raw_rhs, Sequence))
                 return raw_lhs in raw_rhs
+            if self.operator == "CONTAINS":
+                return raw_rhs in raw_lhs
             raise Exception("Operator not supported")
             
         if self.operator == 'NOT':
@@ -136,6 +142,13 @@ class Condition():
         if self.rhs:
             return f"{self.lhs} {self.operator} {self.rhs}"
         return f"{self.operator} {self.lhs}"
+    
+    def set_rows(self, rows):
+        self.rows = rows
+        if (isinstance(self.lhs, Condition)):
+            self.lhs.set_rows(rows)
+        if (isinstance(self.rhs, Condition)):
+            self.rhs.set_rows(rows)
 
 
 class FilterExpression():
