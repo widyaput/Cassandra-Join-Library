@@ -83,6 +83,40 @@ class Condition():
     def is_base(self) -> bool:
         return self.operator != 'NOT' and self.operator != 'AND' and self.operator != 'OR'
 
+    def is_or_same_table(self) -> bool:
+        if self.operator != 'OR':
+            return False
+        if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):
+            if self.lhs.is_base() and self.rhs.is_base():
+                lhs_left_table = self.lhs.get_table()
+                if lhs_left_table == '':
+                    return False
+                rhs_left_table = self.rhs.get_table()
+                if rhs_left_table == '':
+                    return False
+                return lhs_left_table == rhs_left_table
+            return self.lhs.is_or_same_table() and self.rhs.is_or_same_table()
+        return False
+
+    def is_always_and(self) -> bool:
+        if self.operator != 'AND':
+            return False
+        if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):
+            if self.lhs.is_base() and self.rhs.is_base():
+                return True
+            return ((self.lhs.is_or_same_table() or self.lhs.is_always_and()) and
+                (self.rhs.is_or_same_table() or self.rhs.is_always_and()))
+        return False
+        
+
+    def get_table(self):
+        left_table_name = ''
+        if (isinstance(self.lhs, str)):
+            if '.' in self.lhs:
+                left_table_name, _= self.lhs.split('.')
+        return left_table_name
+        
+
     def __and__(self, other):
         return Condition(self, 'AND', other)
 
@@ -96,24 +130,13 @@ class Condition():
         if not isinstance(self.lhs, Condition) and (not isinstance(self.rhs, Condition) and not self.rhs is None ):
             if self.rows is None:
                 raise Exception("Need to save rows first")
-            raw_lhs = None
-            raw_rhs = None
-            if not isinstance(self.lhs, Condition):
-                raw_lhs = self.lhs
-                if (isinstance(self.lhs, str)):
-                    if '.' in self.lhs:
-                        table_name, column = self.lhs.split('.')
-                        if column in self.rows:
-                            raw_lhs = self.rows[column][table_name]
-            if not isinstance(self.rhs, Condition):
-                raw_rhs = self.rhs
-                if (isinstance(self.rhs, str)):
-                    if '.' in self.rhs:
-                        table_name, column = self.rhs.split('.')
-                        if column in self.rows:
-                            raw_rhs = self.rows[column][table_name]
-            assert(raw_lhs is not None)
-            assert(raw_rhs is not None)
+            raw_rhs = self.rhs
+            raw_lhs = self.lhs
+            if (isinstance(self.lhs, str)):
+                if '.' in self.lhs:
+                    table_name, column = self.lhs.split('.')
+                    if column in self.rows:
+                        raw_lhs = self.rows[column][table_name]
             if self.operator == ">":
                 return raw_lhs > raw_rhs
             if self.operator == "<":

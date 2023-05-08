@@ -71,10 +71,37 @@ class NestedJoinExecutor(JoinExecutor):
                     self.selected_cols[table] = columns.union(self.selected_cols[table])    
 
             elif (isinstance(command, FilterCommands)):
-                def parseFilter(condition: Condition, reversed: bool = False):
+                def addColumn(condition: Condition):
                     if (condition.is_base()):
-                        # cek apakah operasinya mengikuti aturan dari cql where clause
-                        # UPDATE: skip dlu ah yg penting bisa dlu
+                        if not isinstance(condition.lhs, Condition) and not isinstance(condition.rhs, Condition):
+                            if (isinstance(condition.lhs, str)):
+                                table_name, column = condition.lhs.split('.')
+                                if self.join_metadata.is_table_exists(table_name) \
+                                    and self.join_metadata.is_column_exists(table_name, column):
+                                        found = False
+                                        for info in self.joins_info:
+                                            if (
+                                                (
+                                                    info["left_table"] == table_name and
+                                                    info["join_column"] == column
+                                                ) or (
+                                                    info["right_table"] == table_name and
+                                                    info["join_column_right"] == column
+                                                    )
+                                                ):
+                                                found = True
+                                                break
+                                        if not found and not "*" in self.table_query[table_name]:
+                                            query = self.table_query[table_name]
+                                            if not(column in query):
+                                                idx = query.index("FROM") 
+                                                self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
+                    else:
+                        addColumn(condition.lhs)
+                        addColumn(condition.rhs)
+                    
+                def parseFilter(condition: Condition):
+                    if (condition.is_base()):
                         if not isinstance(condition.lhs, Condition) and not isinstance(condition.rhs, Condition):
                             if (isinstance(condition.lhs, str)):
                                 table_name, column = condition.lhs.split('.')
@@ -97,43 +124,9 @@ class NestedJoinExecutor(JoinExecutor):
                                                 else:
                                                     self.table_query[table_name] += " or "
                                                 if isinstance(condition.rhs, str):
-                                                    self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} '{str(condition.rhs)}'"
+                                                    self.table_query[table_name] += f"{column} {condition.operator} '{str(condition.rhs)}'"
                                                 else:
-                                                    self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} {str(condition.rhs)}"
-                                                found = True
-
-                                        if not found and not "*" in self.table_query[table_name]:
-                                            query = self.table_query[table_name]
-                                            if not(column in query):
-                                                idx = query.index("FROM") 
-                                                self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
-                                        
-                                        self.table_query[table_name] += " ALLOW FILTERING"
-                            else:
-                                table_name, column = condition.rhs.split('.')
-                                if self.join_metadata.is_table_exists(table_name) \
-                                    and self.join_metadata.is_column_exists(table_name, column):
-                                        found = False
-                                        self.table_query[table_name] = self.table_query[table_name].removesuffix('ALLOW FILTERING')
-                                        for info in self.joins_info:
-                                            if (
-                                                (
-                                                    info["left_table"] == table_name and
-                                                    info["join_column"] == column
-                                                ) or (
-                                                    info["right_table"] == table_name and
-                                                    info["join_column_right"] == column
-                                                    )
-                                                ):
-                                                if not ("where" in self.table_query[table_name]):
-                                                    self.table_query[table_name] += " where "
-                                                else:
-                                                    self.table_query[table_name] += " or "
-                                                
-                                                if isinstance(condition.lhs, str):
-                                                    self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} '{str(condition.lhs)}'"
-                                                else:
-                                                    self.table_query[table_name] += f"{'NOT' if reversed else ''} {column} {condition.operator} {str(condition.lhs)}"
+                                                    self.table_query[table_name] += f"{column} {condition.operator} {str(condition.rhs)}"
                                                 found = True
 
                                         if not found and not "*" in self.table_query[table_name]:
@@ -145,12 +138,14 @@ class NestedJoinExecutor(JoinExecutor):
                                         self.table_query[table_name] += " ALLOW FILTERING"
                         
                     else:
-                        if isinstance(condition.lhs, Condition):
-                            parseFilter(condition.lhs, condition.operator == "NOT")
-                        if isinstance(condition.rhs, Condition):
-                            parseFilter(condition.rhs, condition.operator == "NOT")
+                        if condition.is_always_and() or condition.is_or_same_table():
+                            parseFilter(condition.lhs)
+                            parseFilter(condition.rhs)
+                        else:
+                            addColumn(condition.lhs)
+                            addColumn(condition.rhs)
                         
-                parseFilter(command.expressions, False)
+                parseFilter(command.expressions)
                 self.filter_conditions.append(command.expressions)
             elif (command_type == "JOIN"):
 
@@ -1127,7 +1122,7 @@ class NestedJoinExecutor(JoinExecutor):
             for row in self.current_result:
                 unsatisfied = False
                 for condition in self.filter_conditions:
-                    condition.rows = row
+                    condition.set_rows(row)
                     if not condition:
                         unsatisfied = True
                         break
