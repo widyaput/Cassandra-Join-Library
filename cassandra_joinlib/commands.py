@@ -83,20 +83,6 @@ class Condition():
     def is_base(self) -> bool:
         return self.operator != 'NOT' and self.operator != 'AND' and self.operator != 'OR'
 
-    def is_or_same_table(self) -> bool:
-        if self.operator != 'OR':
-            return False
-        if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):
-            if self.lhs.is_base() and self.rhs.is_base():
-                lhs_left_table = self.lhs.get_table()
-                if lhs_left_table == '':
-                    return False
-                rhs_left_table = self.rhs.get_table()
-                if rhs_left_table == '':
-                    return False
-                return lhs_left_table == rhs_left_table
-            return self.lhs.is_or_same_table() and self.rhs.is_or_same_table()
-        return False
 
     def is_always_and(self) -> bool:
         if self.operator != 'AND':
@@ -104,8 +90,7 @@ class Condition():
         if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):
             if self.lhs.is_base() and self.rhs.is_base():
                 return True
-            return ((self.lhs.is_or_same_table() or self.lhs.is_always_and()) and
-                (self.rhs.is_or_same_table() or self.rhs.is_always_and()))
+            return (self.lhs.is_always_and() and self.rhs.is_always_and())
         return False
         
 
@@ -114,6 +99,8 @@ class Condition():
         if (isinstance(self.lhs, str)):
             if '.' in self.lhs:
                 left_table_name, _= self.lhs.split('.')
+        elif (isinstance(self.lhs, Condition)):
+            left_table_name = self.lhs.get_table()
         return left_table_name
         
 

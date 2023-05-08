@@ -100,7 +100,7 @@ class HashJoinExecutor(JoinExecutor):
                                                 if not ("where" in self.table_query[table_name]):
                                                     self.table_query[table_name] += " where "
                                                 else:
-                                                    self.table_query[table_name] += " or "
+                                                    self.table_query[table_name] += " and "
                                                 if isinstance(condition.rhs, str):
                                                     self.table_query[table_name] += f"{column} {condition.operator} '{str(condition.rhs)}'"
                                                 else:
@@ -116,7 +116,7 @@ class HashJoinExecutor(JoinExecutor):
                                         self.table_query[table_name] += " ALLOW FILTERING"
                         
                     else:
-                        if condition.is_always_and() or condition.is_or_same_table():
+                        if condition.is_always_and():
                             parseFilter(condition.lhs)
                             parseFilter(condition.rhs)
                         else:
@@ -125,40 +125,6 @@ class HashJoinExecutor(JoinExecutor):
                         
                 parseFilter(command.expressions)
                 self.filter_conditions.append(command.expressions)
-            # elif (isinstance(command, FilterCommand)):
-            #     def parseFilter(command: FilterCommand, lastOp: str, reversed: bool):
-            #         if isinstance(exp:= command.expressions, FilterExpression):
-            #             found = False
-            #             for info in self.joins_info:
-            #                 if (
-            #                     (
-            #                         info["left_table"] == exp.table.table_name and
-            #                         info["join_column"] == exp.column
-            #                     ) or (
-            #                         info["right_table"] == exp.table.table_name and
-            #                         info["join_column_right"] == exp.column
-            #                         )
-            #                     ):
-            #                     if not ("where" in self.table_query[exp.table.table_name]):
-            #                         self.table_query[exp.table.table_name] += " where "
-            #                     else:
-            #                         self.table_query[exp.table.table_name] += " or "
-            #                     
-            #                     self.table_query[exp.table.table_name] += f"{exp.column} {exp.operator} {exp.rhs}"
-            #                     found = True
-            #
-            #             if not found and not "*" in self.table_query[exp.table.table_name]:
-            #                 query = self.table_query[exp.table.table_name]
-            #                 idx = query.index("FROM") 
-            #                 self.table_query[exp.table.table_name] = query[:idx] + exp.column + " " + query[idx:]
-            #                 
-            #         else:
-            #             op = command.expressions
-            #             if (isinstance(op, Not)):
-            #                 for info in self.joins_info:
-            #                     if ()
-                    
-
             elif (command_type == "JOIN"):
                 if (selects_valid == None):
                     selects_valid = self.selects_validation()
