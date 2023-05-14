@@ -85,6 +85,8 @@ class Condition():
 
 
     def is_always_and(self) -> bool:
+        if self.is_base():
+            return True
         if self.operator != 'AND':
             return False
         if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):

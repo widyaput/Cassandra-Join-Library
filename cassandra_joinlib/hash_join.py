@@ -10,9 +10,11 @@ from cassandra_joinlib.math_utils import *
 from cassandra.query import dict_factory, SimpleStatement
 from cassandra_joinlib.join_executor import JoinExecutor
 
+from datetime import datetime
+
 class HashJoinExecutor(JoinExecutor):
-    def __init__(self, session, keyspace_name):
-        super().__init__(session, keyspace_name)
+    def __init__(self, session, keyspace_name, amqp_url = '', workers_count = -1):
+        super().__init__(session, keyspace_name, amqp_url, workers_count)
         
         # Saving partition ID for current join
         self.current_join_partition_ids = set()
@@ -28,9 +30,13 @@ class HashJoinExecutor(JoinExecutor):
         self.filter_conditions: List[Condition] = []
 
 
-    def execute(self):
+    def execute(self, save_as=f"{datetime.now()}"):
         # Inherited abstract method
         # Consume the commands queue, execute join
+        if self.amqp_url:
+            super().execute(save_as=save_as)
+        if self.session is None:
+            return
         initial_time = time.time()
         session = self.session
         selects_valid = None
@@ -76,7 +82,8 @@ class HashJoinExecutor(JoinExecutor):
                                                 self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
                     else:
                         addColumn(condition.lhs)
-                        addColumn(condition.rhs)
+                        if condition.rhs is not None:
+                            addColumn(condition.rhs)
                     
                 def parseFilter(condition: Condition):
                     if (condition.is_base()):
@@ -101,10 +108,13 @@ class HashJoinExecutor(JoinExecutor):
                                                     self.table_query[table_name] += " where "
                                                 else:
                                                     self.table_query[table_name] += " and "
-                                                if isinstance(condition.rhs, str):
-                                                    self.table_query[table_name] += f"{column} {condition.operator} '{str(condition.rhs)}'"
+                                                if not (f"{column} = " in self.table_query[table_name]):
+                                                    if isinstance(condition.rhs, str):
+                                                        self.table_query[table_name] += f"{column} {condition.operator} '{str(condition.rhs)}'"
+                                                    else:
+                                                        self.table_query[table_name] += f"{column} {condition.operator} {str(condition.rhs)}"
                                                 else:
-                                                    self.table_query[table_name] += f"{column} {condition.operator} {str(condition.rhs)}"
+                                                    print("cannot query with 2 or more equal")
                                                 found = True
 
                                         if not found and not "*" in self.table_query[table_name]:
@@ -121,7 +131,8 @@ class HashJoinExecutor(JoinExecutor):
                             parseFilter(condition.rhs)
                         else:
                             addColumn(condition.lhs)
-                            addColumn(condition.rhs)
+                            if condition.rhs is not None:
+                                addColumn(condition.rhs)
                         
                 parseFilter(command.expressions)
                 self.filter_conditions.append(command.expressions)
@@ -199,6 +210,7 @@ class HashJoinExecutor(JoinExecutor):
 
                     else :
                         # kenapa malah ambil semua kolom???
+                        # update: karena columns = None => asumsi ambil semua kolom
                         self.table_query[left_table] = f"SELECT * FROM {real_left_table}"
 
                 # Below are actions for Right table
@@ -327,12 +339,18 @@ class HashJoinExecutor(JoinExecutor):
 
         self.time_elapsed['join'] = final_join_time - initial_join_time
         self.time_elapsed['total'] = final_time - initial_time
+        if save_as:
+            if self.nodes_order == -1:
+                self.__save_result(save_as)
+            else:
+                self.__save_result(save_as + "_" + str(self.nodes_order))
 
         return self
 
     def _get_left_data(self, left_table, join_column, left_alias):
         print("Fetching left table")
         session = self.session
+        assert(session is not None)
 
         left_table_rows = None
         is_data_in_partitions = False
@@ -348,7 +366,10 @@ class HashJoinExecutor(JoinExecutor):
             print("Left-Table query : ", left_table_query)
 
             left_table_rows = []
-            statement = SimpleStatement(left_table_query, fetch_size=self.cassandra_fetch_size)
+            fetch_size = self.cassandra_fetch_size
+            if self.nodes_order != -1:
+                fetch_size = self.leftest_table_size // self.workers_count
+            statement = SimpleStatement(left_table_query, fetch_size=fetch_size)
             results = session.execute(statement)
 
             # print(f"Total rows: {len(list(results))}")
@@ -376,37 +397,9 @@ class HashJoinExecutor(JoinExecutor):
                 # Handle rows in the first page
                 total_rows = 0
                 rows_fetched = 0
+                page = 0
                 for row in results:
-                    left_row = row
-
-                    tupled_key_dict = {}
-                    for key in left_row:
-                        value = left_row[key]
-                        new_key = (key, left_table_name)
-                        tupled_key_dict[new_key] = value
-                    
-                    left_table_rows.append(tupled_key_dict)
-                    rows_fetched += 1
-                    total_rows += 1
-
-                    if (rows_fetched == self.cassandra_fetch_size):
-                        self.paging_state[left_table_name] = results.paging_state
-                        break
-                
-                self.left_data_size = asizeof.asizeof(left_table_rows)
-
-                # Handle the rest of the rows
-                while (results.has_more_pages):
-                    print(f"Fetching next page of left table. Current rows: {total_rows}. Left data size: {self.left_data_size}")
-                    rows_fetched = 0
-                    ps = self.paging_state[left_table_name]
-
-                    # Fetch based on last paging state
-                    statement = SimpleStatement(left_table_query, fetch_size=self.cassandra_fetch_size)
-                    results = session.execute(statement, paging_state=ps)
-
-                    for row in results:
-                        # print("Handling another page of cql result")
+                    if self.nodes_order == -1 or self.nodes_order == page:
                         left_row = row
 
                         tupled_key_dict = {}
@@ -416,15 +409,50 @@ class HashJoinExecutor(JoinExecutor):
                             tupled_key_dict[new_key] = value
                         
                         left_table_rows.append(tupled_key_dict)
-                        rows_fetched += 1
                         total_rows += 1
+                    rows_fetched += 1
 
-                        if (rows_fetched == self.cassandra_fetch_size):
+                    if (rows_fetched == fetch_size):
+                        self.paging_state[left_table_name] = results.paging_state
+                        page += 1
+                        break
+                
+                self.left_data_size = asizeof.asizeof(left_table_rows)
+
+                # Handle the rest of the rows
+                while (results.has_more_pages and (self.nodes_order == -1 or self.nodes_order > page - 1 or self.nodes_order == (self.workers_count - 1))):
+                    print(f"Fetching next page of left table. Current rows: {total_rows}. Left data size: {self.left_data_size}")
+                    rows_fetched = 0
+                    ps = self.paging_state[left_table_name]
+
+                    # Fetch based on last paging state
+                    statement = SimpleStatement(left_table_query, fetch_size=fetch_size)
+                    results = session.execute(statement, paging_state=ps)
+
+                    for row in results:
+                        # print("Handling another page of cql result")
+                        if self.nodes_order == -1 or self.nodes_order == page or page == self.workers_count:
+                            left_row = row
+
+                            tupled_key_dict = {}
+                            for key in left_row:
+                                value = left_row[key]
+                                new_key = (key, left_table_name)
+                                tupled_key_dict[new_key] = value
+                            
+                            left_table_rows.append(tupled_key_dict)
+                            total_rows += 1
+                            self.left_data_size += asizeof.asizeof(row)
+                        rows_fetched += 1
+
+                        if (page != self.workers_count or self.nodes_order == -1) and (rows_fetched == fetch_size):
                             self.paging_state[left_table_name] = results.paging_state
+                            page += 1
                             break
-                        
-                        self.left_data_size += asizeof.asizeof(row)
-
+                        if (page == self.workers_count) and (rows_fetched == fetch_size + self.leftest_table_size % fetch_size):
+                            self.paging_state[left_table_name] = results.paging_state
+                            page += 1
+                            break
                     # Size Checking: Checking done per page
                     if ((self.max_data_size <= self.get_data_size()) or is_data_in_partitions or self.force_partition): 
                         print("Data to big. Put into partition")
@@ -466,6 +494,7 @@ class HashJoinExecutor(JoinExecutor):
     def _get_right_data(self, right_table, join_column_right, right_alias, is_left_table_partitioned):
         print("Fetching right data")
         session = self.session
+        assert(session is not None)
 
         right_table_rows = None
         is_data_in_partitions = False
@@ -625,7 +654,7 @@ class HashJoinExecutor(JoinExecutor):
         else :
             self.time_elapsed[key_name] = fetch_time
 
-        print('halo sampai sini')
+        # print('halo sampai sini')
         # Do join based on whether partitions is used or not
         if (is_left_table_in_partitions and is_right_table_in_partitions):
             all_partition_ids = left_partition_ids.union(right_partition_ids)
@@ -946,7 +975,7 @@ class HashJoinExecutor(JoinExecutor):
 
         return
     
-    def save_result(self, filename):
+    def __save_result(self, filename):
         cwd = os.getcwd()
         filename = filename + ".txt"
         result_folder = os.path.join(cwd, "results")

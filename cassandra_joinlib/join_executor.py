@@ -1,5 +1,6 @@
 import psutil
 from pympler import asizeof
+import json
 
 from cassandra_joinlib.commands import *
 from cassandra_joinlib.utils import *
@@ -7,14 +8,29 @@ from cassandra_joinlib.math_utils import *
 
 from abc import ABC, abstractmethod
 from cassandra.query import dict_factory
+from cassandra.cluster import Session
+from typing import Optional
+from datetime import datetime
+from base64 import b64encode, b64decode
 
 
 class JoinExecutor(ABC):
-    def __init__(self, session, keyspace_name):
+    queue_name = "TEST"
+    
+    def __init__(self, session: Session, keyspace_name: str, amqp_url = '', workers_count = -1):
         # These attributes are about the DB from Cassandra
         self.session = session
-        # self.session.row_factory = dict_factory
+        if self.session:
+            self.session.row_factory = dict_factory
         self.keyspace = keyspace_name
+
+        self.amqp_url = amqp_url
+
+        self.nodes_order = -1
+
+        self.workers_count = workers_count
+
+        self.leftest_table_size = -1
 
         # Saving commands for Lazy execution
         self.command_queue = []
@@ -27,6 +43,8 @@ class JoinExecutor(ABC):
 
         # Saving queries for each table needs (Select and Where Query)
         self.table_query = {}
+
+        self.count_table_query = {}
 
         # Set join order to 1. Add 1 for every additional join command
         self.join_order = 1
@@ -162,6 +180,7 @@ class JoinExecutor(ABC):
                 right_table = right_alias
             right_join_col = command.join_column_right
 
+            is_right_table_exists = False
             try:
                 is_right_table_exists = right_table in self.selected_cols
 
@@ -192,13 +211,83 @@ class JoinExecutor(ABC):
 
         return self
 
-    @abstractmethod
-    def execute(self):
-        pass
+    def execute(self, save_as=f"{datetime.now()}"):
+        # for loop hingga sebanyak workernodes
+        # lalu assign order_nodes dengan index
+        # kirim ke mq
+        assert(self.session is not None)
+        
+        if self.nodes_order == -1 and self.amqp_url:
+            import pika
+            import pickle
 
-    # @abstractmethod
-    def save_result(self, filename):
-        pass
+            connection = pika.BlockingConnection(
+                pika.URLParameters(self.amqp_url)
+                )
+            channel = connection.channel()
+            channel.queue_declare(queue=JoinExecutor.queue_name)
+            
+            for command in self.command_queue:
+                if isinstance(command, SelectCommand):
+                    table = command.table
+                    columns = command.columns
+
+                    if (not table in self.selected_cols):
+                        self.selected_cols[table] = columns
+
+                    else :
+                        self.selected_cols[table] = columns.union(self.selected_cols[table])    
+                if isinstance(command, JoinCommand):
+                    if (not self.selects_validation()):
+                        print("Some join columns are not selected")
+                        return
+                    query = f"select count(*) as count from {self.keyspace}.{command.left_table}" 
+                    result = self.session.execute(query)
+                    self.leftest_table_size = result.one()['count']
+                    break
+            self.session = None
+            from copy import deepcopy
+            for i in range(self.workers_count):
+                executor = deepcopy(self)
+                executor.nodes_order = i
+                message = {
+                    "executor":b64encode(pickle.dumps(executor)).decode('utf-8'),
+                    "save_as":save_as
+                }
+                channel.basic_publish(
+                    exchange='', 
+                    routing_key=JoinExecutor.queue_name, 
+                    body = json.dumps(message),
+                )
+            connection.close()
+        # jika ga ada mq yaudah
+
+    @staticmethod
+    def consume(amqp_url: str, session: Session):
+        import pika
+        import pickle
+
+        connection = pika.BlockingConnection(
+            pika.URLParameters(amqp_url)
+            )
+        channel = connection.channel()
+        channel.queue_declare(queue=JoinExecutor.queue_name)
+        def cb(cn, method, properties, body):
+            message_body = json.loads(body)
+            executor: JoinExecutor = pickle.loads(b64decode(message_body["executor"].encode()))
+            session.row_factory = dict_factory
+            executor.session = session
+            executor.execute(save_as=message_body["save_as"])
+            # belom kirim balik file
+            # TODO: kirim balik file, tambah consumer lawan
+            # yang bakal append seluruh file dengan prefix = save_as
+        channel.basic_consume(
+            queue=JoinExecutor.queue_name,
+            on_message_callback=cb,
+            auto_ack=True
+        )
+        channel.start_consuming()
+
 
 
 class JoinMetadata:
@@ -280,6 +369,9 @@ class JoinMetadata:
     
     def get_columns_of_table(self, table_name):
         return self.columns[table_name]
+
+    def get_pk_columns_of_table(self, table_name):
+        return self.pk_columns[table_name]
 
     
     def get_size(self):

@@ -10,9 +10,11 @@ from cassandra_joinlib.math_utils import *
 from cassandra.query import dict_factory, SimpleStatement
 from cassandra_joinlib.join_executor import JoinExecutor
 
+from datetime import datetime
+
 class NestedJoinExecutor(JoinExecutor):
-    def __init__(self, session, keyspace_name):
-        super().__init__(session, keyspace_name)
+    def __init__(self, session, keyspace_name, amqp_url = '', workers_count = -1):
+        super().__init__(session, keyspace_name, amqp_url, workers_count)
 
         self.current_result = []
         self.current_result_size = 0
@@ -51,8 +53,12 @@ class NestedJoinExecutor(JoinExecutor):
         return self.left_data_size + self.right_data_size + self.current_result_size
 
 
-    def execute(self):
+    def execute(self, save_as=f"{datetime.now()}"):
         # Consume the commands queue, execute join
+        if self.amqp_url:
+            super().execute(save_as=save_as)
+        if self.session is None:
+            return
         initial_time = time.time()
         session = self.session
         selects_valid = None
@@ -98,7 +104,8 @@ class NestedJoinExecutor(JoinExecutor):
                                                 self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
                     else:
                         addColumn(condition.lhs)
-                        addColumn(condition.rhs)
+                        if condition.rhs is not None:
+                            addColumn(condition.rhs)
                     
                 def parseFilter(condition: Condition):
                     if (condition.is_base()):
@@ -123,10 +130,13 @@ class NestedJoinExecutor(JoinExecutor):
                                                     self.table_query[table_name] += " where "
                                                 else:
                                                     self.table_query[table_name] += " or "
-                                                if isinstance(condition.rhs, str):
-                                                    self.table_query[table_name] += f"{column} {condition.operator} '{str(condition.rhs)}'"
+                                                if not (f"{column} = " in self.table_query[table_name]):
+                                                    if isinstance(condition.rhs, str):
+                                                        self.table_query[table_name] += f"{column} {condition.operator} '{str(condition.rhs)}'"
+                                                    else:
+                                                        self.table_query[table_name] += f"{column} {condition.operator} {str(condition.rhs)}"
                                                 else:
-                                                    self.table_query[table_name] += f"{column} {condition.operator} {str(condition.rhs)}"
+                                                    print("cannot query with 2 or more equal")
                                                 found = True
 
                                         if not found and not "*" in self.table_query[table_name]:
@@ -143,7 +153,8 @@ class NestedJoinExecutor(JoinExecutor):
                             parseFilter(condition.rhs)
                         else:
                             addColumn(condition.lhs)
-                            addColumn(condition.rhs)
+                            if condition.rhs is not None:
+                                addColumn(condition.rhs)
                         
                 parseFilter(command.expressions)
                 self.filter_conditions.append(command.expressions)
@@ -197,6 +208,8 @@ class NestedJoinExecutor(JoinExecutor):
                     for row in left_meta_rows:
                         column_name = row['column_name']
                         self.join_metadata.add_one_column(left_table, column_name)
+                        if row['kind'] == 'partition_key':
+                            self.join_metadata.add_pk_column(left_table, column_name)
         
                 if (not left_table in self.table_query):
                     if (left_table in self.selected_cols):
@@ -322,12 +335,19 @@ class NestedJoinExecutor(JoinExecutor):
         self.time_elapsed['join'] = final_join_time - initial_join_time
         self.time_elapsed['total'] = final_time - initial_time
 
+        if save_as:
+            if self.nodes_order == -1:
+                self.__save_result(save_as)
+            else:
+                self.__save_result(save_as + "_" + str(self.nodes_order))
+
         return self
 
 
     def _get_left_data(self, left_table, left_alias):
         # Only get data when fit to memory. Otherwise, load in join execution function
         session = self.session
+        assert(session is not None)
 
         left_table_rows = None
         is_data_in_partitions = False
@@ -344,7 +364,11 @@ class NestedJoinExecutor(JoinExecutor):
             print("Left table query : ", left_table_query)
 
             left_table_rows = []
-            statement = SimpleStatement(left_table_query, fetch_size=self.cassandra_fetch_size)
+            fetch_size = self.cassandra_fetch_size
+            if self.nodes_order != -1:
+                fetch_size = self.leftest_table_size // self.workers_count
+                
+            statement = SimpleStatement(left_table_query, fetch_size=fetch_size)
             results = session.execute(statement)
             
             if (not results.has_more_pages):
@@ -376,46 +400,11 @@ class NestedJoinExecutor(JoinExecutor):
                 # Handle rows in the first page
                 total_rows = 0
                 rows_fetched = 0
+                page = 0
                 for row in results:
                     # Change the dict structure, so each column has parent table
                     # Also, adding flag to each row
-                    left_row = row
-
-                    row_dict = {}
-                    for key in left_row:
-                        value = left_row[key]
-                        new_key = (key, left_table_name)
-                        row_dict[new_key] = value
-
-                    left_row = row_dict
-
-                    # Save as list. 0 or 1 is a flag to identify whether a particular row has matched or has not.
-                    left_table_rows.append({
-                        "data" : left_row,
-                        "flag" : 0
-                    })
-                    rows_fetched += 1
-                    total_rows += 1
-
-                    if (rows_fetched == self.cassandra_fetch_size):
-                        self.paging_state[left_table_name] = results.paging_state
-                        break
-                
-                self.left_data_size = asizeof.asizeof(left_table_rows)
-
-                # Handle the rest of the rows
-                while (results.has_more_pages):
-                    print(f"Fetching next page of left table. Current rows: {total_rows}. Left data size: {self.left_data_size}")
-                    rows_fetched = 0
-                    ps = self.paging_state[left_table_name]
-
-                    # Fetch based on last paging state
-                    statement = SimpleStatement(left_table_query, fetch_size=self.cassandra_fetch_size)
-                    results = session.execute(statement, paging_state = ps)
-
-                    for row in results:
-                        # Change the dict structure, so each column has parent table
-                        # Also, adding flag to each row
+                    if self.nodes_order == -1 or self.nodes_order == page:
                         left_row = row
 
                         row_dict = {}
@@ -431,15 +420,55 @@ class NestedJoinExecutor(JoinExecutor):
                             "data" : left_row,
                             "flag" : 0
                         })
+                        total_rows += 1
+                    rows_fetched += 1
+
+                    if (rows_fetched == fetch_size):
+                        self.paging_state[left_table_name] = results.paging_state
+                        page += 1
+                        break
+                
+                self.left_data_size = asizeof.asizeof(left_table_rows)
+
+                # Handle the rest of the rows
+                while (results.has_more_pages and (self.nodes_order == -1 or self.nodes_order > page - 1 or self.nodes_order == (self.workers_count - 1))):
+                    print(f"Fetching next page of left table. Current rows: {total_rows}. Left data size: {self.left_data_size}")
+                    rows_fetched = 0
+                    ps = self.paging_state[left_table_name]
+
+                    # Fetch based on last paging state
+                    statement = SimpleStatement(left_table_query, fetch_size=fetch_size)
+                    results = session.execute(statement, paging_state = ps)
+
+                    for row in results:
+                        # Change the dict structure, so each column has parent table
+                        # Also, adding flag to each row
+                        if self.nodes_order == -1 or self.nodes_order == page:
+                            left_row = row
+
+                            row_dict = {}
+                            for key in left_row:
+                                value = left_row[key]
+                                new_key = (key, left_table_name)
+                                row_dict[new_key] = value
+
+                            left_row = row_dict
+
+                            # Save as list. 0 or 1 is a flag to identify whether a particular row has matched or has not.
+                            left_table_rows.append({
+                                "data" : left_row,
+                                "flag" : 0
+                            })
+                            total_rows += 1
+                            self.left_data_size += asizeof.asizeof(row)
 
                         rows_fetched += 1
-                        total_rows += 1
 
-                        if (rows_fetched == self.cassandra_fetch_size):
+                        if (page != self.workers_count - 1 or self.nodes_order == -1) and (rows_fetched == fetch_size):
                             self.paging_state[left_table_name] = results.paging_state
+                            page += 1
                             break
                     
-                        self.left_data_size += asizeof.asizeof(row)
                     
                     # SIZE Checking: Checking done per page
                     if ((self.max_data_size / 2 <= self.get_left_size()) or is_data_in_partitions or self.force_partition):
@@ -482,6 +511,7 @@ class NestedJoinExecutor(JoinExecutor):
         print("Fetch right table")
         # Only get data when fit to memory. Otherwise, load in join execution function
         session = self.session
+        assert(session is not None)
 
         right_table_rows = None
         is_data_in_partitions = False
@@ -1075,7 +1105,7 @@ class NestedJoinExecutor(JoinExecutor):
 
         return
     
-    def save_result(self, filename):
+    def __save_result(self, filename):
         cwd = os.getcwd()
         filename = filename + ".txt"
         result_folder = os.path.join(cwd, "results")
