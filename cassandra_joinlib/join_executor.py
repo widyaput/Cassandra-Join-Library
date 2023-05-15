@@ -12,10 +12,12 @@ from cassandra.cluster import Session
 from typing import Optional
 from datetime import datetime
 from base64 import b64encode, b64decode
+from uuid import uuid4
 
 
 class JoinExecutor(ABC):
-    queue_name = "TEST"
+    queue_name = "divide_jobs"
+    exchange_name = "executor_exchange"
     
     def __init__(self, session: Session, keyspace_name: str, amqp_url = '', workers_count = -1):
         # These attributes are about the DB from Cassandra
@@ -225,7 +227,13 @@ class JoinExecutor(ABC):
                 pika.URLParameters(self.amqp_url)
                 )
             channel = connection.channel()
+            channel.exchange_declare(JoinExecutor.exchange_name, "direct")
             channel.queue_declare(queue=JoinExecutor.queue_name)
+            channel.queue_bind(
+                queue=JoinExecutor.queue_name,
+                exchange=JoinExecutor.exchange_name,
+                routing_key=JoinExecutor.queue_name
+            )
             
             for command in self.command_queue:
                 if isinstance(command, SelectCommand):
@@ -247,18 +255,47 @@ class JoinExecutor(ABC):
                     break
             self.session = None
             from copy import deepcopy
+            message_id = str(uuid4())
             for i in range(self.workers_count):
                 executor = deepcopy(self)
                 executor.nodes_order = i
                 message = {
                     "executor":b64encode(pickle.dumps(executor)).decode('utf-8'),
-                    "save_as":save_as
+                    "save_as":save_as,
+                    "message_id": message_id,
                 }
                 channel.basic_publish(
-                    exchange='', 
+                    exchange=JoinExecutor.exchange_name, 
                     routing_key=JoinExecutor.queue_name, 
                     body = json.dumps(message),
                 )
+            
+            temp_queue = channel.queue_declare(queue="", exclusive=True)
+            temp_queue_name = temp_queue.method.queue
+            channel.queue_bind(
+                exchange=JoinExecutor.exchange_name,
+                queue=temp_queue_name,
+                routing_key=message_id,
+            )
+
+            count = 0
+            def cb(ch, method, properties, body):
+                nonlocal count
+                count += 1
+                cwd = os.getcwd()
+                folder = os.path.join(cwd, "results")
+                if (not os.path.isdir(folder)):
+                    os.mkdir(folder)
+                file_path = os.path.join(folder, save_as + ".txt")
+                with open(file_path, mode='a+') as file:
+                    file.write(body.decode())
+
+                if count == self.workers_count:
+                    ch.stop_consuming()
+                
+            channel.basic_consume(queue=temp_queue_name, auto_ack=True, on_message_callback=cb)
+            channel.start_consuming()
+            
             connection.close()
         # jika ga ada mq yaudah
 
@@ -271,16 +308,29 @@ class JoinExecutor(ABC):
             pika.URLParameters(amqp_url)
             )
         channel = connection.channel()
+        channel.exchange_declare(JoinExecutor.exchange_name, "direct")
         channel.queue_declare(queue=JoinExecutor.queue_name)
+        channel.queue_bind(
+            queue=JoinExecutor.queue_name,
+            exchange=JoinExecutor.exchange_name,
+            routing_key=JoinExecutor.queue_name
+        )
         def cb(cn, method, properties, body):
             message_body = json.loads(body)
             executor: JoinExecutor = pickle.loads(b64decode(message_body["executor"].encode()))
             session.row_factory = dict_factory
             executor.session = session
             executor.execute(save_as=message_body["save_as"])
-            # belom kirim balik file
-            # TODO: kirim balik file, tambah consumer lawan
-            # yang bakal append seluruh file dengan prefix = save_as
+            cwd = os.getcwd()
+            folder = os.path.join(cwd, "results")
+            file_path = os.path.join(folder, message_body["save_as"] + "_" + str(executor.nodes_order) + ".txt")
+            with open(file_path, 'r') as file:
+                file_content = file.read()
+            cn.basic_publish(
+                exchange=JoinExecutor.exchange_name,
+                routing_key=message_body["message_id"],
+                body=file_content,
+            )
         channel.basic_consume(
             queue=JoinExecutor.queue_name,
             on_message_callback=cb,
