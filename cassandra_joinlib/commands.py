@@ -126,6 +126,11 @@ class Condition():
                     table_name, column = self.lhs.split('.')
                     if column in self.rows:
                         raw_lhs = self.rows[column][table_name]
+            if (isinstance(self.rhs, str)):
+                if '.' in self.rhs:
+                    table_name, column = self.rhs.split('.')
+                    if column in self.rows:
+                        raw_rhs = self.rows[column][table_name]
             if self.operator == ">":
                 return raw_lhs > raw_rhs
             if self.operator == "<":
@@ -163,40 +168,6 @@ class Condition():
             self.rhs.set_rows(rows)
 
 
-class FilterExpression():
-    def __init__(self, info: TableInfo, column: str, operator: str, rhs: Any) -> None:
-        self.table = info
-        self.column = column
-        self.operator = operator
-        self.rhs = rhs
-
-
-class Operators():
-    def __init__(self):
-        pass
-
-class FilterOperators(Operators):
-    def __init__(self, expressions: Union[List[Union[FilterExpression, Operators]], Operators, FilterExpression]):
-        self.expressions = expressions
-
-
-class And(FilterOperators):
-    def __init__(self, expressions: List[Union[FilterExpression, Operators]]):
-        super().__init__(expressions)
-
-class Or(FilterOperators):
-    def __init__(self, expressions: List[Union[FilterExpression, Operators]]):
-        super().__init__(expressions)
-
-class Not(FilterOperators):
-    def __init__(self, expressions: Union[FilterExpression, Operators]):
-        super().__init__(expressions)
-
-
-class FilterCommand(Command):
-    def __init__(self, expressions: Union[FilterExpression, FilterOperators]):
-        super().__init__()
-        self.expressions = expressions
 
 class FilterCommands(Command):
     def __init__(self, expressions: Condition):
