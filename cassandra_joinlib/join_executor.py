@@ -13,13 +13,14 @@ from typing import Optional
 from datetime import datetime
 from base64 import b64encode, b64decode
 from uuid import uuid4
+from dataclasses import dataclass, asdict
 
 
 class JoinExecutor(ABC):
     queue_name = "divide_jobs"
     exchange_name = "executor_exchange"
     
-    def __init__(self, session: Session, keyspace_name: str, amqp_url = '', workers_count = -1):
+    def __init__(self, session: Session, keyspace_name: str, amqp_url = ''):
         # These attributes are about the DB from Cassandra
         self.session = session
         if self.session:
@@ -30,7 +31,7 @@ class JoinExecutor(ABC):
 
         self.nodes_order = -1
 
-        self.workers_count = workers_count
+        self.token_ranges = []
 
         self.leftest_table_size = -1
 
@@ -234,35 +235,50 @@ class JoinExecutor(ABC):
                 exchange=JoinExecutor.exchange_name,
                 routing_key=JoinExecutor.queue_name
             )
+            partitioner_name = self.session.cluster.metadata.partitioner
+            token_map = self.session.cluster.metadata.token_map
+            token_ring = token_map.ring
+            host_to_token_ranges = {}
+            for i in range(len(token_ring)):
+                host = token_map.token_to_host_owner[token_ring[i]]
+                next_idx = i+1 if i != len(token_ring) - 1 else 0
+                token_ranges = TokenRanges(token_ring[i].value, token_ring[next_idx].value, partitioner_name)
+                if (not host in host_to_token_ranges):
+                    host_to_token_ranges[host] = [token_ranges]
+                else:
+                    host_to_token_ranges[host].append(token_ranges)
             
-            for command in self.command_queue:
-                if isinstance(command, SelectCommand):
-                    table = command.table
-                    columns = command.columns
-
-                    if (not table in self.selected_cols):
-                        self.selected_cols[table] = columns
-
-                    else :
-                        self.selected_cols[table] = columns.union(self.selected_cols[table])    
-                if isinstance(command, JoinCommand):
-                    if (not self.selects_validation()):
-                        print("Some join columns are not selected")
-                        return
-                    query = f"select count(*) as count from {self.keyspace}.{command.left_table}" 
-                    result = self.session.execute(query)
-                    self.leftest_table_size = result.one()['count']
-                    break
+            # for command in self.command_queue:
+            #     if isinstance(command, SelectCommand):
+            #         table = command.table
+            #         columns = command.columns
+            #
+            #         if (not table in self.selected_cols):
+            #             self.selected_cols[table] = columns
+            #
+            #         else :
+            #             self.selected_cols[table] = columns.union(self.selected_cols[table])    
+            #     if isinstance(command, JoinCommand):
+            #         if (not self.selects_validation()):
+            #             print("Some join columns are not selected")
+            #             return
+            #         query = f"select count(*) as count from {self.keyspace}.{command.left_table}" 
+            #         result = self.session.execute(query)
+            #         self.leftest_table_size = result.one()['count']
+            #         break
             self.session = None
             from copy import deepcopy
             message_id = str(uuid4())
-            for i in range(self.workers_count):
+            counter = self.nodes_order
+            for host in host_to_token_ranges:
                 executor = deepcopy(self)
-                executor.nodes_order = i
+                counter += 1
+                executor.nodes_order = counter
                 message = {
                     "executor":b64encode(pickle.dumps(executor)).decode('utf-8'),
                     "save_as":save_as,
                     "message_id": message_id,
+                    "token_ranges": [asdict(token) for token in host_to_token_ranges[host]]
                 }
                 channel.basic_publish(
                     exchange=JoinExecutor.exchange_name, 
@@ -290,7 +306,7 @@ class JoinExecutor(ABC):
                 with open(file_path, mode='a+') as file:
                     file.write(body.decode())
 
-                if count == self.workers_count:
+                if count == len(host_to_token_ranges):
                     ch.stop_consuming()
                 
             channel.basic_consume(queue=temp_queue_name, auto_ack=True, on_message_callback=cb)
@@ -317,9 +333,11 @@ class JoinExecutor(ABC):
         )
         def cb(cn, method, properties, body):
             message_body = json.loads(body)
+            token_ranges = [TokenRanges(**token) for token in message_body["token_ranges"]]
             executor: JoinExecutor = pickle.loads(b64decode(message_body["executor"].encode()))
             session.row_factory = dict_factory
             executor.session = session
+            executor.token_ranges = token_ranges
             executor.execute(save_as=message_body["save_as"])
             cwd = os.getcwd()
             folder = os.path.join(cwd, "results")
@@ -422,6 +440,14 @@ class JoinMetadata:
 
     def get_pk_columns_of_table(self, table_name):
         return self.pk_columns[table_name]
+
+    def get_pk_columns_string_of_table(self, table_name):
+        pkstring = ''
+        for i in range(len(self.pk_columns[table_name])):
+            pkstring += f"{self.pk_columns[table_name][i]}"
+            if i != len(self.pk_columns[table_name]) - 1:
+                pkstring += ","
+        return pkstring
 
     
     def get_size(self):

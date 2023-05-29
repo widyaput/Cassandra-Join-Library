@@ -1,4 +1,5 @@
 from typing import Any, List, Union, Sequence
+from dataclasses import dataclass
 
 
 class Command:
@@ -94,6 +95,30 @@ class Condition():
                 return True
             return (self.lhs.is_always_and() and self.rhs.is_always_and())
         return False
+
+    def is_there_or(self) -> bool:
+        if self.is_base():
+            return False
+        if self.operator == 'OR':
+            return True
+        if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):
+            if self.lhs.is_base() and self.rhs.is_base():
+                return False
+            return (self.lhs.is_there_or() or self.rhs.is_there_or())
+        return False
+
+    
+        
+    def is_there_not(self) -> bool:
+        if self.is_base():
+            return False
+        if self.operator == 'NOT':
+            return True
+        if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):
+            if self.lhs.is_base() and self.rhs.is_base():
+                return False
+            return (self.lhs.is_there_not() or self.rhs.is_there_not())
+        return False
         
 
     def get_table(self):
@@ -156,7 +181,7 @@ class Condition():
             return any(map(bool, [self.lhs, self.rhs]))
 
     def __str__(self):
-        if self.rhs:
+        if self.rhs is not None:
             return f"{self.lhs} {self.operator} {self.rhs}"
         return f"{self.operator} {self.lhs}"
     
@@ -166,6 +191,22 @@ class Condition():
             self.lhs.set_rows(rows)
         if (isinstance(self.rhs, Condition)):
             self.rhs.set_rows(rows)
+            
+@dataclass
+class TokenRanges():
+    start: int
+    end: int
+    type_partition: str
+    
+    def toCondition(self, pks: str):
+        if int(self.start) < int(self.end):
+            return Condition(f"token({pks})", '>', str(self.start)) & Condition(f"token({pks})", '<', str(self.end))
+        else:
+            if self.type_partition == 'org.apache.cassandra.dht.Murmur3Partitioner' or\
+                    self.type_partition == 'org.apache.cassandra.dht.RandomPartitioner':
+                return Condition(f"token({pks})", '>', str(self.start)) | Condition(f"token({pks})", '<', str(self.end))
+            return Condition(f"token({pks})", '>', str(self.start))
+            # return Condition(f"token(pks)")
 
 
 
