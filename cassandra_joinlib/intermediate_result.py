@@ -79,21 +79,25 @@ class IntermediateDirectHashResult:
     # If certain value for join column is already available, append to left / right list
     # If not, add new hashtable member with new value (empty left and right list)
 
-        dict_key = None
-
+        join_column = None
+        table = None
         if (is_build and self.build == "L"):
-            dict_key = (self.join_column, self.left_table)
+            join_column = self.join_column
+            table = self.left_table
         
         elif (is_build and self.build == "R"):
-            dict_key = (self.join_column_right, self.right_table)
+            join_column = self.join_column_right
+            table = self.right_table
         
         elif ((not is_build) and self.build == "L"):
-            dict_key = (self.join_column_right, self.right_table)
+            join_column = self.join_column_right
+            table = self.right_table
 
         elif ((not is_build) and self.build == "R"):
-            dict_key = (self.join_column, self.left_table)
+            join_column = self.join_column
+            table = self.left_table
 
-        key_value = row_dict[dict_key]
+        key_value = get_value_from_dict(join_column, table, row_dict)
 
 
         if (key_value == "null" or key_value == None or key_value == "None"): 
@@ -130,16 +134,30 @@ class IntermediateDirectHashResult:
         result_join_num = self.join_order + 1
 
         # Build and Probe key
-        build_key = None
-        probe_key = None
-
+        # build_key = None
+        # probe_key = None
+        #
+        # if (self.build == "L"):
+        #     build_key = (self.join_column, self.left_table)
+        #     probe_key = (self.join_column_right, self.right_table)
+        # 
+        # else :
+        #     build_key = (self.join_column_right, self.right_table)
+        #     probe_key = (self.join_column, self.left_table)
+        build_join_column = None
+        probe_join_column = None
+        build_table = None
+        probe_table = None
         if (self.build == "L"):
-            build_key = (self.join_column, self.left_table)
-            probe_key = (self.join_column_right, self.right_table)
-        
-        else :
-            build_key = (self.join_column_right, self.right_table)
-            probe_key = (self.join_column, self.left_table)
+            build_join_column = self.join_column
+            build_table = self.left_table
+            probe_join_column = self.join_column_right
+            probe_table = self.right_table
+        else:
+            build_join_column = self.join_column_right
+            build_table = self.right_table
+            probe_join_column = self.join_column
+            probe_table = self.left_table
 
         for key in self.hash_table:
             # Left list is ACTUALLY BUILD LIST
@@ -182,7 +200,8 @@ class IntermediateDirectHashResult:
                 for right_idx in range(len(probe_list)):
                     right_item = probe_list[right_idx]
                     # Double checking real value (hash value already matched).
-                    if (left_item[build_key] == right_item[probe_key]):
+                    if (get_value_from_dict(build_join_column, build_table, left_item)\
+                        == get_value_from_dict(probe_join_column, probe_table, right_item)):
 
                         merged = dict(list(left_item.items()) + list(right_item.items()))
 
@@ -442,7 +461,8 @@ class IntermediatePartitionedHashResult:
         if (left_partition != None):
             for left_row in left_partition:
 
-                key = left_row[left_joincol_key]
+                # key = left_row[left_joincol_key]
+                key = get_value_from_dict(self.join_column, self.left_table, left_row)
 
                 if (key == None):
                     if (self.join_type == "INNER"):
@@ -469,7 +489,7 @@ class IntermediatePartitionedHashResult:
         if (right_partition != None):
             for right_row in right_partition:
 
-                key = right_row[right_joincol_key]
+                key = get_value_from_dict(self.join_column_right, self.right_table, right_row)
 
                 if (key == None):
                     if (self.join_type == "INNER"):
@@ -501,7 +521,7 @@ class IntermediatePartitionedHashResult:
 
         left_joincol_key = (self.join_column, self.left_table)
         right_joincol_key = (self.join_column_right, self.right_table)
-        
+
         for partition_id in all_partitions:
             
             # Hash table access 
@@ -561,7 +581,8 @@ class IntermediatePartitionedHashResult:
                     for left_row in left_list:
                         for right_row in right_list:
                             # Compare for double checking equality
-                            if (left_row[left_joincol_key] == right_row[right_joincol_key]):
+                            if (get_value_from_dict(self.join_column, self.left_table, left_row)\
+                            == get_value_from_dict(self.join_column_right, self.right_table, right_row)):
                                 merged = dict(list(left_row.items()) + list(right_row.items()))
                                 partition_join_result.append(merged)
 

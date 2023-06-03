@@ -8,13 +8,14 @@ from cassandra_joinlib.utils import *
 from cassandra_joinlib.math_utils import *
 
 from cassandra.query import dict_factory, SimpleStatement
+from cassandra.concurrent import execute_concurrent
 from cassandra_joinlib.join_executor import JoinExecutor
 
 from datetime import datetime
 
 class HashJoinExecutor(JoinExecutor):
-    def __init__(self, session, keyspace_name, amqp_url = ''):
-        super().__init__(session, keyspace_name, amqp_url)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         
         # Saving partition ID for current join
         self.current_join_partition_ids = set()
@@ -363,80 +364,48 @@ class HashJoinExecutor(JoinExecutor):
         # Read data
         if (self.join_order == 1): # First join, all data are in Cassandra
             left_table_queries = []
+            fetch_size = self.cassandra_fetch_size
+            statement_and_params = []
             if len(self.token_ranges):
                 base_left_query = self.table_query[left_table_name].removesuffix('ALLOW FILTERING')
+                if "AND" in base_left_query:
+                    base_left_query = base_left_query + " AND "
+                else:
+                    base_left_query = base_left_query + " WHERE "
                 pks_str = self.join_metadata.get_pk_columns_string_of_table(left_table_name)
+                stmt1 =  session.prepare(base_left_query + f"token({pks_str}) > ? AND token({pks_str}) < ?")
+                stmt1.fetch_size = fetch_size
+                stmt2 =  session.prepare(base_left_query + f"token({pks_str}) > ?")
+                stmt2.fetch_size = fetch_size
+                stmt3 =  session.prepare(base_left_query + f"token({pks_str}) < ?")
+                stmt3.fetch_size = fetch_size
                 for token in self.token_ranges:
                     condition = token.toCondition(pks_str)
                     if condition.is_always_and():
-                        if "AND" in base_left_query:
-                            left_table_queries.append(base_left_query + " AND " + str(condition))
-                        else:
-                            left_table_queries.append(base_left_query + " WHERE " + str(condition))
+                        params = (int(condition.lhs.rhs), int(condition.rhs.rhs))
+                        statement_and_params.append((stmt1, params))
                     else:
-                        if "AND" in base_left_query:
-                            left_table_queries.append(base_left_query + " AND " + str(condition.lhs))
-                            left_table_queries.append(base_left_query + " AND " + str(condition.rhs))
-                        else:
-                            left_table_queries.append(base_left_query + " WHERE " + str(condition.lhs))
-                            left_table_queries.append(base_left_query + " WHERE " + str(condition.rhs))
-
+                        params1 = (int(condition.lhs.rhs), )
+                        params2 = (int(condition.rhs.rhs), )
+                        statement_and_params.append((stmt2, params1))
+                        statement_and_params.append((stmt3, params2))
                 for query in left_table_queries:
                     query += " ALLOW FILTERING"
                 
             else:
-                left_table_queries.append(self.table_query[left_table_name])
+                # left_table_queries.append(self.table_query[left_table_name])
+                statement_and_params.append((self.table_query[left_table_name], None))
                     
-            print("Left-Table query : ", left_table_queries)
-            for left_table_query in left_table_queries:
-                fetch_size = self.cassandra_fetch_size
-                # if self.nodes_order != -1:
-                #     fetch_size = self.leftest_table_size // self.workers_count
-                statement = SimpleStatement(left_table_query, fetch_size=fetch_size)
-                results = session.execute(statement)
-
-                # print(f"Total rows: {len(list(results))}")
-                if (not results.has_more_pages):
-                    current_rows = list(results)
-                    for idx in range(len(current_rows)):
-                        left_row = current_rows[idx]
-
-                        tupled_key_dict = {}
-                        for key in left_row:
-                            value = left_row[key]
-                            new_key = (key, left_table_name)
-                            tupled_key_dict[new_key] = value
-                        
-                        current_rows[idx] = tupled_key_dict
-                    left_table_rows = left_table_rows + current_rows
-
-                    self.paging_state[left_table_name] = None
-
-                    # Size checking is not conducted with assumption
-                    # 5000 rows always fit in memory
-                    self.left_data_size = asizeof.asizeof(left_table_rows)
-                
-
-                else :
-                    # Handle rows in the first page
-                    total_rows = 0
-                    rows_fetched = 0
-                    # page = 0
-                    for row in results:
-                        # if self.nodes_order == -1 or self.nodes_order == page:
-                        #     left_row = row
-                        #
-                        #     tupled_key_dict = {}
-                        #     for key in left_row:
-                        #         value = left_row[key]
-                        #         new_key = (key, left_table_name)
-                        #         tupled_key_dict[new_key] = value
-                        #     
-                        #     left_table_rows.append(tupled_key_dict)
-                        #     total_rows += 1
-                        # rows_fetched += 1
+            # print("Left-Table query : ", left_table_queries)
+            protocol_version = session.cluster.protocol_version
+            concurrency = 500 if protocol_version > 2 else 100
+            results = execute_concurrent(session, statement_and_params, concurrency=concurrency, results_generator=True, raise_on_first_error=False)
+            for (success, result) in results:
+                if not success:
+                    print(result)
+                else:
+                    for row in result:
                         left_row = row
-
                         tupled_key_dict = {}
                         for key in left_row:
                             value = left_row[key]
@@ -444,68 +413,7 @@ class HashJoinExecutor(JoinExecutor):
                             tupled_key_dict[new_key] = value
                         
                         left_table_rows.append(tupled_key_dict)
-                        rows_fetched += 1
-                        total_rows += 1
-                        if (rows_fetched == fetch_size):
-                            self.paging_state[left_table_name] = results.paging_state
-                            # page += 1
-                            break
-                    
-                    self.left_data_size = asizeof.asizeof(left_table_rows)
-
-                    # Handle the rest of the rows
-                    # while (results.has_more_pages and (self.nodes_order == -1 or self.nodes_order > page - 1 or self.nodes_order == (self.workers_count - 1))):
-                    while(results.has_more_pages):
-                        print(f"Fetching next page of left table. Current rows: {total_rows}. Left data size: {self.left_data_size}")
-                        rows_fetched = 0
-                        ps = self.paging_state[left_table_name]
-
-                        # Fetch based on last paging state
-                        statement = SimpleStatement(left_table_query, fetch_size=fetch_size)
-                        results = session.execute(statement, paging_state=ps)
-
-                        for row in results:
-                            # print("Handling another page of cql result")
-                            left_row = row
-
-                            tupled_key_dict = {}
-                            for key in left_row:
-                                value = left_row[key]
-                                new_key = (key, left_table_name)
-                                tupled_key_dict[new_key] = value
-                            
-                            left_table_rows.append(tupled_key_dict)
-                            rows_fetched += 1
-                            total_rows += 1
-
-                            if (rows_fetched == self.cassandra_fetch_size):
-                                self.paging_state[left_table_name] = results.paging_state
-                                break
-                            
-                            self.left_data_size += asizeof.asizeof(row)
-                            # if self.nodes_order == -1 or self.nodes_order == page or page == self.workers_count:
-                            #     left_row = row
-                            #
-                            #     tupled_key_dict = {}
-                            #     for key in left_row:
-                            #         value = left_row[key]
-                            #         new_key = (key, left_table_name)
-                            #         tupled_key_dict[new_key] = value
-                            #     
-                            #     left_table_rows.append(tupled_key_dict)
-                            #     total_rows += 1
-                            #     self.left_data_size += asizeof.asizeof(row)
-                            # rows_fetched += 1
-                            #
-                            # if (page != self.workers_count or self.nodes_order == -1) and (rows_fetched == fetch_size):
-                            #     self.paging_state[left_table_name] = results.paging_state
-                            #     page += 1
-                            #     break
-                            # if (page == self.workers_count) and (rows_fetched == fetch_size + self.leftest_table_size % fetch_size):
-                            #     self.paging_state[left_table_name] = results.paging_state
-                            #     page += 1
-                            #     break
-                        # Size Checking: Checking done per page
+                        self.left_data_size += asizeof.asizeof(row)
                         if ((self.max_data_size <= self.get_data_size()) or is_data_in_partitions or self.force_partition): 
                             print("Data to big. Put into partition")
                             # Left table is bigger than max data size in memory, use partition
@@ -517,6 +425,136 @@ class HashJoinExecutor(JoinExecutor):
 
                             left_table_rows = []
                             self.left_data_size = 0
+                    
+
+            # for left_table_query in left_table_queries:
+            #     # if self.nodes_order != -1:
+            #     #     fetch_size = self.leftest_table_size // self.workers_count
+            #     statement = SimpleStatement(left_table_query, fetch_size=fetch_size)
+            #     results = session.execute(statement)
+            #
+            #     # print(f"Total rows: {len(list(results))}")
+            #     if (not results.has_more_pages):
+            #         current_rows = list(results)
+            #         for idx in range(len(current_rows)):
+            #             left_row = current_rows[idx]
+            #
+            #             tupled_key_dict = {}
+            #             for key in left_row:
+            #                 value = left_row[key]
+            #                 new_key = (key, left_table_name)
+            #                 tupled_key_dict[new_key] = value
+            #             
+            #             current_rows[idx] = tupled_key_dict
+            #         left_table_rows = left_table_rows + current_rows
+            #
+            #         self.paging_state[left_table_name] = None
+            #
+            #         # Size checking is not conducted with assumption
+            #         # 5000 rows always fit in memory
+            #         self.left_data_size = asizeof.asizeof(left_table_rows)
+            #     
+            #
+            #     else :
+            #         # Handle rows in the first page
+            #         total_rows = 0
+            #         rows_fetched = 0
+            #         # page = 0
+            #         for row in results:
+            #             # if self.nodes_order == -1 or self.nodes_order == page:
+            #             #     left_row = row
+            #             #
+            #             #     tupled_key_dict = {}
+            #             #     for key in left_row:
+            #             #         value = left_row[key]
+            #             #         new_key = (key, left_table_name)
+            #             #         tupled_key_dict[new_key] = value
+            #             #     
+            #             #     left_table_rows.append(tupled_key_dict)
+            #             #     total_rows += 1
+            #             # rows_fetched += 1
+            #             left_row = row
+            #
+            #             tupled_key_dict = {}
+            #             for key in left_row:
+            #                 value = left_row[key]
+            #                 new_key = (key, left_table_name)
+            #                 tupled_key_dict[new_key] = value
+            #             
+            #             left_table_rows.append(tupled_key_dict)
+            #             rows_fetched += 1
+            #             total_rows += 1
+            #             if (rows_fetched == fetch_size):
+            #                 self.paging_state[left_table_name] = results.paging_state
+            #                 # page += 1
+            #                 break
+            #         
+            #         self.left_data_size = asizeof.asizeof(left_table_rows)
+            #
+            #         # Handle the rest of the rows
+            #         # while (results.has_more_pages and (self.nodes_order == -1 or self.nodes_order > page - 1 or self.nodes_order == (self.workers_count - 1))):
+            #         while(results.has_more_pages):
+            #             print(f"Fetching next page of left table. Current rows: {total_rows}. Left data size: {self.left_data_size}")
+            #             rows_fetched = 0
+            #             ps = self.paging_state[left_table_name]
+            #
+            #             # Fetch based on last paging state
+            #             statement = SimpleStatement(left_table_query, fetch_size=fetch_size)
+            #             results = session.execute(statement, paging_state=ps)
+            #
+            #             for row in results:
+            #                 # print("Handling another page of cql result")
+            #                 left_row = row
+            #
+            #                 tupled_key_dict = {}
+            #                 for key in left_row:
+            #                     value = left_row[key]
+            #                     new_key = (key, left_table_name)
+            #                     tupled_key_dict[new_key] = value
+            #                 
+            #                 left_table_rows.append(tupled_key_dict)
+            #                 rows_fetched += 1
+            #                 total_rows += 1
+            #
+            #                 if (rows_fetched == self.cassandra_fetch_size):
+            #                     self.paging_state[left_table_name] = results.paging_state
+            #                     break
+            #                 
+            #                 self.left_data_size += asizeof.asizeof(row)
+            #                 # if self.nodes_order == -1 or self.nodes_order == page or page == self.workers_count:
+            #                 #     left_row = row
+            #                 #
+            #                 #     tupled_key_dict = {}
+            #                 #     for key in left_row:
+            #                 #         value = left_row[key]
+            #                 #         new_key = (key, left_table_name)
+            #                 #         tupled_key_dict[new_key] = value
+            #                 #     
+            #                 #     left_table_rows.append(tupled_key_dict)
+            #                 #     total_rows += 1
+            #                 #     self.left_data_size += asizeof.asizeof(row)
+            #                 # rows_fetched += 1
+            #                 #
+            #                 # if (page != self.workers_count or self.nodes_order == -1) and (rows_fetched == fetch_size):
+            #                 #     self.paging_state[left_table_name] = results.paging_state
+            #                 #     page += 1
+            #                 #     break
+            #                 # if (page == self.workers_count) and (rows_fetched == fetch_size + self.leftest_table_size % fetch_size):
+            #                 #     self.paging_state[left_table_name] = results.paging_state
+            #                 #     page += 1
+            #                 #     break
+            #             # Size Checking: Checking done per page
+            #             if ((self.max_data_size <= self.get_data_size()) or is_data_in_partitions or self.force_partition): 
+            #                 print("Data to big. Put into partition")
+            #                 # Left table is bigger than max data size in memory, use partition
+            #                 is_data_in_partitions = True
+            #
+            #                 # Flush left table
+            #                 partition_ids_this_iter = put_into_partition(left_table_rows, self.join_order, left_table_name, join_column, True)
+            #                 partition_ids = partition_ids.union(partition_ids_this_iter)
+            #
+            #                 left_table_rows = []
+            #                 self.left_data_size = 0
 
 
         else : # Non first join, left table may in self.current_result or in partitions
@@ -543,12 +581,12 @@ class HashJoinExecutor(JoinExecutor):
         return left_table_rows, is_data_in_partitions, partition_ids
 
 
-    def _get_right_data(self, right_table, join_column_right, right_alias, is_left_table_partitioned):
+    def _get_right_data(self, right_table, join_column_right, right_alias, is_left_table_partitioned, is_DSE_direct_join):
         print("Fetching right data")
         session = self.session
         assert(session is not None)
 
-        right_table_rows = None
+        right_table_rows = []
         is_data_in_partitions = False
         partition_ids = set()
 
@@ -557,70 +595,51 @@ class HashJoinExecutor(JoinExecutor):
         if (right_alias != None):
             right_table_name = right_alias
 
-        right_table_query = self.table_query[right_table_name]
-        print("Right-Table query : ", right_table_query)
-
-        right_table_rows = []
-        statement = SimpleStatement(right_table_query, fetch_size=self.cassandra_fetch_size)
-        results = session.execute(statement)
-
-        if (not results.has_more_pages):
-            right_table_rows = list(results)
-            # Change dict structure to a tupled-key dict
-            for idx in range(len(right_table_rows)):
-                right_row = right_table_rows[idx]
-
-                tupled_key_dict = {}
-                for key in right_row:
-                    value = right_row[key]
-                    new_key = (key, right_table_name)
-                    tupled_key_dict[new_key] = value
-                
-                right_table_rows[idx] = tupled_key_dict
+        # right_table_query = self.table_query[right_table_name]
+        # print("Right-Table query : ", right_table_query)
+        right_table_queries = []
+        fetch_size = self.cassandra_fetch_size
+        statement_and_params = []
+        if (is_DSE_direct_join):
+            base_right_query = self.table_query[right_table_name].removesuffix('ALLOW FILTERING')
+            if "AND" in base_right_query:
+                base_right_query = base_right_query + " AND "
+            else:
+                base_right_query = base_right_query + " WHERE "
+            pks_str = self.join_metadata.get_pk_columns_string_of_table(right_table_name)
+            stmt1 =  session.prepare(base_right_query + f"token({pks_str}) > ? AND token({pks_str}) < ?")
+            stmt1.fetch_size = fetch_size
+            stmt2 =  session.prepare(base_right_query + f"token({pks_str}) > ?")
+            stmt2.fetch_size = fetch_size
+            stmt3 =  session.prepare(base_right_query + f"token({pks_str}) < ?")
+            stmt3.fetch_size = fetch_size
+            for token in self.token_ranges:
+                condition = token.toCondition(pks_str)
+                if condition.is_always_and():
+                    params = (int(condition.lhs.rhs), int(condition.rhs.rhs))
+                    statement_and_params.append((stmt1, params))
+                else:
+                    params1 = (int(condition.lhs.rhs), )
+                    params2 = (int(condition.rhs.rhs), )
+                    statement_and_params.append((stmt2, params1))
+                    statement_and_params.append((stmt3, params2))
+            for query in right_table_queries:
+                query += " ALLOW FILTERING"
             
-            self.paging_state[right_table_name] = None
-            # Size checking is not conducted with assumption:
-            # 5000 rows always fit in memory
-            self.right_data_size = asizeof.asizeof(right_table_rows)
-        
-        else :
-            # Handle rows in first page
-            # Change dict structure
-            total_rows = 0
-            rows_fetched = 0
-            for row in results:
-                right_row = row
-
-                tupled_key_dict = {}
-                for key in right_row:
-                    value = right_row[key]
-                    new_key = (key, right_table_name)
-                    tupled_key_dict[new_key] = value
+        else:
+            # left_table_queries.append(self.table_query[left_table_name])
+            statement_and_params.append((self.table_query[right_table_name], None))
                 
-                right_table_rows.append(tupled_key_dict)
-                rows_fetched += 1
-                total_rows += 1
-
-                if (rows_fetched == self.cassandra_fetch_size):
-                    self.paging_state[right_table_name] = results.paging_state
-                    break
-
-                self.right_data_size += asizeof.asizeof(row)
-
-            # Handle the rest of the rows
-            while (results.has_more_pages):
-                print(f"Fetching next page of right table. Current rows: {total_rows}. Object size: {asizeof.asizeof(right_table_rows)}")
-                rows_fetched = 0
-                ps = self.paging_state[right_table_name]
-
-                # Fetch based on last paging state
-                statement = SimpleStatement(right_table_query, fetch_size=self.cassandra_fetch_size)
-                results = session.execute(statement, paging_state=ps)
-
-                for row in results:
-                    # Change the dict structure to a tupled-key dict
+        # print("Left-Table query : ", left_table_queries)
+        protocol_version = session.cluster.protocol_version
+        concurrency = 500 if protocol_version > 2 else 100
+        results = execute_concurrent(session, statement_and_params, concurrency=concurrency, results_generator=True, raise_on_first_error=False)
+        for (success, result) in results:
+            if not success:
+                print(result)
+            else:
+                for row in result:
                     right_row = row
-
                     tupled_key_dict = {}
                     for key in right_row:
                         value = right_row[key]
@@ -628,27 +647,108 @@ class HashJoinExecutor(JoinExecutor):
                         tupled_key_dict[new_key] = value
                     
                     right_table_rows.append(tupled_key_dict)
-                    rows_fetched += 1
-                    total_rows += 1
+                    self.left_data_size += asizeof.asizeof(row)
+                    if ((self.max_data_size <= self.get_data_size()) or is_left_table_partitioned or is_data_in_partitions or self.force_partition): 
+                        print("Data to big. Put into partition")
+                        # Left table is bigger than max data size in memory, use partition
+                        is_data_in_partitions = True
 
-                    if (rows_fetched == self.cassandra_fetch_size):
-                        self.paging_state[right_table_name] = results.paging_state
-                        break
+                        # Flush left table
+                        partition_ids_this_iter = put_into_partition(right_table_rows, self.join_order, right_table_name, join_column_right, True)
+                        partition_ids = partition_ids.union(partition_ids_this_iter)
 
-                    self.right_data_size += asizeof.asizeof(row)
-                
+                        left_table_rows = []
+                        self.left_data_size = 0
 
-                # SIZE Checking: Check size used per page
-                if (((self.max_data_size <= self.get_data_size()) or (is_left_table_partitioned)) or is_data_in_partitions or self.force_partition): 
-                    print("Data to big. Put into partition")
-                    # Left table is bigger than max data size in memory, use partition
-                    is_data_in_partitions = True
-                    
-                    # Flush right table
-                    partition_ids_curr_iter = put_into_partition(right_table_rows, self.join_order, right_table_name, join_column_right, False)
-                    partition_ids = partition_ids.union(partition_ids_curr_iter)
-                    right_table_rows = []
-                    self.right_data_size = 0
+        # right_table_rows = []
+        # statement = SimpleStatement(right_table_query, fetch_size=self.cassandra_fetch_size)
+        # results = session.execute(statement)
+        #
+        # if (not results.has_more_pages):
+        #     right_table_rows = list(results)
+        #     # Change dict structure to a tupled-key dict
+        #     for idx in range(len(right_table_rows)):
+        #         right_row = right_table_rows[idx]
+        #
+        #         tupled_key_dict = {}
+        #         for key in right_row:
+        #             value = right_row[key]
+        #             new_key = (key, right_table_name)
+        #             tupled_key_dict[new_key] = value
+        #         
+        #         right_table_rows[idx] = tupled_key_dict
+        #     
+        #     self.paging_state[right_table_name] = None
+        #     # Size checking is not conducted with assumption:
+        #     # 5000 rows always fit in memory
+        #     self.right_data_size = asizeof.asizeof(right_table_rows)
+        # 
+        # else :
+        #     # Handle rows in first page
+        #     # Change dict structure
+        #     total_rows = 0
+        #     rows_fetched = 0
+        #     for row in results:
+        #         right_row = row
+        #
+        #         tupled_key_dict = {}
+        #         for key in right_row:
+        #             value = right_row[key]
+        #             new_key = (key, right_table_name)
+        #             tupled_key_dict[new_key] = value
+        #         
+        #         right_table_rows.append(tupled_key_dict)
+        #         rows_fetched += 1
+        #         total_rows += 1
+        #
+        #         if (rows_fetched == self.cassandra_fetch_size):
+        #             self.paging_state[right_table_name] = results.paging_state
+        #             break
+        #
+        #         self.right_data_size += asizeof.asizeof(row)
+        #
+        #     # Handle the rest of the rows
+        #     while (results.has_more_pages):
+        #         print(f"Fetching next page of right table. Current rows: {total_rows}. Object size: {asizeof.asizeof(right_table_rows)}")
+        #         rows_fetched = 0
+        #         ps = self.paging_state[right_table_name]
+        #
+        #         # Fetch based on last paging state
+        #         statement = SimpleStatement(right_table_query, fetch_size=self.cassandra_fetch_size)
+        #         results = session.execute(statement, paging_state=ps)
+        #
+        #         for row in results:
+        #             # Change the dict structure to a tupled-key dict
+        #             right_row = row
+        #
+        #             tupled_key_dict = {}
+        #             for key in right_row:
+        #                 value = right_row[key]
+        #                 new_key = (key, right_table_name)
+        #                 tupled_key_dict[new_key] = value
+        #             
+        #             right_table_rows.append(tupled_key_dict)
+        #             rows_fetched += 1
+        #             total_rows += 1
+        #
+        #             if (rows_fetched == self.cassandra_fetch_size):
+        #                 self.paging_state[right_table_name] = results.paging_state
+        #                 break
+        #
+        #             self.right_data_size += asizeof.asizeof(row)
+        #         
+        #
+        #         # SIZE Checking: Check size used per page
+        #         if (((self.max_data_size <= self.get_data_size()) or (is_left_table_partitioned)) or is_data_in_partitions or self.force_partition): 
+        #             print("Data to big. Put into partition")
+        #             # Left table is bigger than max data size in memory, use partition
+        #             is_data_in_partitions = True
+        #             
+        #             # Flush right table
+        #             partition_ids_curr_iter = put_into_partition(right_table_rows, self.join_order, right_table_name, join_column_right, False)
+        #             partition_ids = partition_ids.union(partition_ids_curr_iter)
+        #             right_table_rows = []
+        #             self.right_data_size = 0
         
         # Outer check size, when left in partitions, right should be in partitions as well
         if (((self.max_data_size <= self.get_data_size()) or (is_left_table_partitioned)) or is_data_in_partitions or self.force_partition): 
@@ -681,6 +781,7 @@ class HashJoinExecutor(JoinExecutor):
         left_alias = join_info['left_alias']
         right_alias = join_info['right_alias']
 
+
         left_table_name = left_table
         if (left_alias != None):
             left_table_name = left_alias
@@ -688,14 +789,22 @@ class HashJoinExecutor(JoinExecutor):
         right_table_name = right_table
         if (right_alias != None):
             right_table_name = right_alias
-
+            
+        is_DSE_direct_join = True
+        right_table_pks = self.join_metadata.get_pk_columns_of_table(right_table_name)
+        if not isinstance(join_column_right, tuple):
+            is_DSE_direct_join = len(right_table_pks) == 1 and right_table_pks[0] == join_column_right
+        else:
+            is_DSE_direct_join = set(right_table_pks).issubset(set(join_column_right))
+        
+        is_DSE_direct_join = is_DSE_direct_join and not self.disable_direct_join and len(self.token_ranges)
 
         initial_fetch_time = time.time()
         # Get Left table data
         left_table_rows, is_left_table_in_partitions, left_partition_ids = self._get_left_data(left_table, join_column, left_alias)
 
         # Get right table data
-        right_table_rows, is_right_table_in_partitions, right_partition_ids = self._get_right_data(right_table, join_column_right, right_alias, is_left_table_in_partitions)
+        right_table_rows, is_right_table_in_partitions, right_partition_ids = self._get_right_data(right_table, join_column_right, right_alias, is_left_table_in_partitions, is_DSE_direct_join)
 
         final_fetch_time = time.time()
         fetch_time = final_fetch_time - initial_fetch_time
@@ -867,8 +976,14 @@ class HashJoinExecutor(JoinExecutor):
             # Build table
             for idx in range(len(left_table_rows)):
                 row = left_table_rows[idx]
-                dict_key = (join_column, left_table_name)
-                left_key = row[dict_key]
+                if not isinstance(join_column, tuple):
+                    dict_key = (join_column, left_table_name)
+                    left_key = row[dict_key]
+                else:
+                    left_key_array = []
+                    for column in join_column:
+                        left_key_array.append(row[(column, left_table_name)])
+                    left_key = tuple(left_key_array)
 
                 # Left table is build table by default
                 is_build_table = True
@@ -891,8 +1006,14 @@ class HashJoinExecutor(JoinExecutor):
             # Probe table
             for idx in range(len(right_table_rows)):
                 row = right_table_rows[idx]
-                dict_key = (join_column_right, right_table_name)
-                right_key = row[dict_key]
+                if not isinstance(join_column_right, tuple):
+                    dict_key = (join_column_right, right_table_name)
+                    right_key = row[dict_key]
+                else:
+                    right_key_array = []
+                    for column in join_column_right:
+                        right_key_array.append(row[(column, right_table_name)])
+                    right_key = tuple(right_key_array)
 
                 # Right table is probe table by default
                 is_build_table = False
@@ -939,8 +1060,14 @@ class HashJoinExecutor(JoinExecutor):
             # Build table
             for idx in range(len(right_table_rows)):
                 row = right_table_rows[idx]
-                dict_key = (join_column_right, right_table_name)
-                right_key = row[dict_key]
+                if not isinstance(join_column_right, tuple):
+                    dict_key = (join_column_right, right_table_name)
+                    right_key = row[dict_key]
+                else:
+                    right_key_array = []
+                    for column in join_column_right:
+                        right_key_array.append(row[(column, right_table_name)])
+                    right_key = tuple(right_key_array)
 
                 if (right_key == None):
                     if (join_type == "INNER"):
@@ -962,8 +1089,14 @@ class HashJoinExecutor(JoinExecutor):
             # Probe table
             for idx in range(len(left_table_rows)):
                 row = left_table_rows[idx]
-                dict_key = (join_column, left_table_name)
-                left_key = row[dict_key]
+                if not isinstance(join_column, tuple):
+                    dict_key = (join_column, left_table_name)
+                    left_key = row[dict_key]
+                else:
+                    left_key_array = []
+                    for column in join_column:
+                        left_key_array.append(row[(column, left_table_name)])
+                    left_key = tuple(left_key_array)
 
                 # Left table is build table by default
                 is_build_table = False

@@ -20,12 +20,14 @@ class JoinExecutor(ABC):
     queue_name = "divide_jobs"
     exchange_name = "executor_exchange"
     
-    def __init__(self, session: Session, keyspace_name: str, amqp_url = ''):
+    def __init__(self, session: Session, keyspace_name: str, amqp_url = '', disable_DSE_direct_join = False):
         # These attributes are about the DB from Cassandra
         self.session = session
         if self.session:
             self.session.row_factory = dict_factory
         self.keyspace = keyspace_name
+
+        self.disable_direct_join = disable_DSE_direct_join
 
         self.amqp_url = amqp_url
 
@@ -44,6 +46,7 @@ class JoinExecutor(ABC):
         # Set a left table as the join process is a deep left-join
         self.left_table = "EMPTY"
 
+
         # Saving queries for each table needs (Select and Where Query)
         self.table_query = {}
 
@@ -60,6 +63,7 @@ class JoinExecutor(ABC):
         # Set the maximum size of data (Byte) that can be placed into memory simultaneously
         # Currently is set to 80% of available memory
         self.max_data_size = int(0.25 * psutil.virtual_memory().available)
+        # self.max_data_size = 2
 
         self.left_data_size = 0
         self.right_data_size = 0
@@ -172,10 +176,14 @@ class JoinExecutor(ABC):
                 pass
 
             if (is_left_table_exists):
-                if (not left_join_col in self.selected_cols[left_table]):
-                    print(f"Join column {left_join_col} in {left_table} are not selected!")
-                    return False
-
+                if not isinstance(left_join_col, tuple):
+                    if (not left_join_col in self.selected_cols[left_table]):
+                        print(f"Join column {left_join_col} in {left_table} are not selected!")
+                        return False
+                else:
+                    if (not set(left_join_col).issubset(self.selected_cols[left_table])):
+                        print(f"Join column {left_join_col} in {left_table} are not selected!")
+                        return False
 
             right_alias = command.right_alias            
             right_table = command.right_table
@@ -191,9 +199,14 @@ class JoinExecutor(ABC):
                 pass
             
             if (is_right_table_exists):
-                if (not right_join_col in self.selected_cols[right_table]):
-                    print(f"Join column {right_join_col} in {right_table} are not selected!")
-                    return False
+                if not isinstance(right_join_col, tuple):
+                    if (not right_join_col in self.selected_cols[right_table]):
+                        print(f"Join column {right_join_col} in {right_table} are not selected!")
+                        return False
+                else:
+                    if (not set(right_join_col).issubset(self.selected_cols[right_table])):
+                        print(f"Join column {right_join_col} in {right_table} are not selected!")
+                        return False
 
         return True
 

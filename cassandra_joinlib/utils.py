@@ -1,6 +1,7 @@
 import os
 import shutil
 import json
+from typing import Union
 
 from pympler import asizeof
 from tabulate import tabulate
@@ -229,8 +230,6 @@ def read_from_partition_nonhash(join_order, partition_id, is_left_table):
 
 
 def put_into_partition(data_page, join_order, table_name, join_column, is_left_table):
-    key = (join_column, table_name)
-
     hash_values_set = set()
 
     cwd = os.getcwd()
@@ -248,7 +247,7 @@ def put_into_partition(data_page, join_order, table_name, join_column, is_left_t
 
 
     for data in data_page:
-        join_column_value = data[key]
+        join_column_value = get_value_from_dict(join_column, table_name, data)
         partition_number = partition_hash_function(join_column_value)
 
         partition_filename = None
@@ -498,3 +497,18 @@ def construct_null_columns(table_name, column_names):
         null_columns[key] = None
 
     return null_columns
+
+def get_value_from_dict(join_column, table_name, row_dict):
+    if not isinstance(join_column, tuple):
+        if join_column is None:
+            dict_key = None
+        else:
+            dict_key = (join_column, table_name)
+        key_value = row_dict[dict_key]
+    else:
+        key_value_array = []
+        for column in join_column:
+            key_value_array.append(row_dict[(column, table_name)])
+        key_value = tuple(key_value_array)
+
+    return key_value
