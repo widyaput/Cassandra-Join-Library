@@ -363,7 +363,6 @@ class HashJoinExecutor(JoinExecutor):
 
         # Read data
         if (self.join_order == 1): # First join, all data are in Cassandra
-            left_table_queries = []
             fetch_size = self.cassandra_fetch_size
             statement_and_params = []
             if len(self.token_ranges):
@@ -373,11 +372,11 @@ class HashJoinExecutor(JoinExecutor):
                 else:
                     base_left_query = base_left_query + " WHERE "
                 pks_str = self.join_metadata.get_pk_columns_string_of_table(left_table_name)
-                stmt1 =  session.prepare(base_left_query + f"token({pks_str}) > ? AND token({pks_str}) < ?")
+                stmt1 =  session.prepare(base_left_query + f"token({pks_str}) > ? AND token({pks_str}) < ? ALLOW FILTERING")
                 stmt1.fetch_size = fetch_size
-                stmt2 =  session.prepare(base_left_query + f"token({pks_str}) > ?")
+                stmt2 =  session.prepare(base_left_query + f"token({pks_str}) > ? ALLOW FILTERING")
                 stmt2.fetch_size = fetch_size
-                stmt3 =  session.prepare(base_left_query + f"token({pks_str}) < ?")
+                stmt3 =  session.prepare(base_left_query + f"token({pks_str}) < ? ALLOW FILTERING")
                 stmt3.fetch_size = fetch_size
                 for token in self.token_ranges:
                     condition = token.toCondition(pks_str)
@@ -389,8 +388,6 @@ class HashJoinExecutor(JoinExecutor):
                         params2 = (int(condition.rhs.rhs), )
                         statement_and_params.append((stmt2, params1))
                         statement_and_params.append((stmt3, params2))
-                for query in left_table_queries:
-                    query += " ALLOW FILTERING"
                 
             else:
                 # left_table_queries.append(self.table_query[left_table_name])
@@ -597,7 +594,6 @@ class HashJoinExecutor(JoinExecutor):
 
         # right_table_query = self.table_query[right_table_name]
         # print("Right-Table query : ", right_table_query)
-        right_table_queries = []
         fetch_size = self.cassandra_fetch_size
         statement_and_params = []
         if (is_DSE_direct_join):
@@ -607,11 +603,11 @@ class HashJoinExecutor(JoinExecutor):
             else:
                 base_right_query = base_right_query + " WHERE "
             pks_str = self.join_metadata.get_pk_columns_string_of_table(right_table_name)
-            stmt1 =  session.prepare(base_right_query + f"token({pks_str}) > ? AND token({pks_str}) < ?")
+            stmt1 =  session.prepare(base_right_query + f"token({pks_str}) > ? AND token({pks_str}) < ? ALLOW FILTERING")
             stmt1.fetch_size = fetch_size
-            stmt2 =  session.prepare(base_right_query + f"token({pks_str}) > ?")
+            stmt2 =  session.prepare(base_right_query + f"token({pks_str}) > ? ALLOW FILTERING")
             stmt2.fetch_size = fetch_size
-            stmt3 =  session.prepare(base_right_query + f"token({pks_str}) < ?")
+            stmt3 =  session.prepare(base_right_query + f"token({pks_str}) < ? ALLOW FILTERING")
             stmt3.fetch_size = fetch_size
             for token in self.token_ranges:
                 condition = token.toCondition(pks_str)
@@ -623,8 +619,6 @@ class HashJoinExecutor(JoinExecutor):
                     params2 = (int(condition.rhs.rhs), )
                     statement_and_params.append((stmt2, params1))
                     statement_and_params.append((stmt3, params2))
-            for query in right_table_queries:
-                query += " ALLOW FILTERING"
             
         else:
             # left_table_queries.append(self.table_query[left_table_name])
@@ -647,18 +641,17 @@ class HashJoinExecutor(JoinExecutor):
                         tupled_key_dict[new_key] = value
                     
                     right_table_rows.append(tupled_key_dict)
-                    self.left_data_size += asizeof.asizeof(row)
+                    self.right_data_size += asizeof.asizeof(row)
                     if ((self.max_data_size <= self.get_data_size()) or is_left_table_partitioned or is_data_in_partitions or self.force_partition): 
                         print("Data to big. Put into partition")
                         # Left table is bigger than max data size in memory, use partition
                         is_data_in_partitions = True
-
-                        # Flush left table
-                        partition_ids_this_iter = put_into_partition(right_table_rows, self.join_order, right_table_name, join_column_right, True)
-                        partition_ids = partition_ids.union(partition_ids_this_iter)
-
-                        left_table_rows = []
-                        self.left_data_size = 0
+                        
+                        # Flush right table
+                        partition_ids_curr_iter = put_into_partition(right_table_rows, self.join_order, right_table_name, join_column_right, False)
+                        partition_ids = partition_ids.union(partition_ids_curr_iter)
+                        right_table_rows = []
+                        self.right_data_size = 0
 
         # right_table_rows = []
         # statement = SimpleStatement(right_table_query, fetch_size=self.cassandra_fetch_size)
