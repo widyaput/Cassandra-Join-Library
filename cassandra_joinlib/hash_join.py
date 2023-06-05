@@ -367,16 +367,27 @@ class HashJoinExecutor(JoinExecutor):
             statement_and_params = []
             if len(self.token_ranges):
                 base_left_query = self.table_query[left_table_name].removesuffix('ALLOW FILTERING')
-                if "AND" in base_left_query:
-                    base_left_query = base_left_query + " AND "
-                else:
-                    base_left_query = base_left_query + " WHERE "
                 pks_str = self.join_metadata.get_pk_columns_string_of_table(left_table_name)
-                stmt1 =  session.prepare(base_left_query + f"token({pks_str}) > ? AND token({pks_str}) < ? ALLOW FILTERING")
+                stmt1_str = ""
+                stmt2_str = ""
+                stmt3_str = ""
+                idx_where = base_left_query.find("where")
+                if idx_where != -1 :
+                    stmt1_str = base_left_query[:idx_where + len("where")] + f" token({pks_str}) > ? AND token({pks_str}) < ? AND" \
+                            + base_left_query[idx_where + len("where"):] + " ALLOW FILTERING"
+                    stmt2_str = base_left_query[:idx_where + len("where")] + f" token({pks_str}) > ? AND" \
+                            + base_left_query[idx_where + len("where"):] + " ALLOW FILTERING"
+                    stmt3_str = base_left_query[:idx_where + len("where")] + f" token({pks_str}) < ? AND" \
+                            + base_left_query[idx_where + len("where"):] + " ALLOW FILTERING"
+                else:
+                    stmt1_str = base_left_query + f" where token({pks_str}) > ? AND token({pks_str}) < ? ALLOW FILTERING"
+                    stmt2_str = base_left_query + f" where token({pks_str}) > ? ALLOW FILTERING"
+                    stmt3_str = base_left_query + f" where token({pks_str}) < ? ALLOW FILTERING"
+                stmt1 =  session.prepare(stmt1_str)
                 stmt1.fetch_size = fetch_size
-                stmt2 =  session.prepare(base_left_query + f"token({pks_str}) > ? ALLOW FILTERING")
+                stmt2 =  session.prepare(stmt2_str)
                 stmt2.fetch_size = fetch_size
-                stmt3 =  session.prepare(base_left_query + f"token({pks_str}) < ? ALLOW FILTERING")
+                stmt3 =  session.prepare(stmt3_str)
                 stmt3.fetch_size = fetch_size
                 for token in self.token_ranges:
                     condition = token.toCondition(pks_str)
@@ -598,16 +609,27 @@ class HashJoinExecutor(JoinExecutor):
         statement_and_params = []
         if (is_DSE_direct_join):
             base_right_query = self.table_query[right_table_name].removesuffix('ALLOW FILTERING')
-            if "AND" in base_right_query:
-                base_right_query = base_right_query + " AND "
-            else:
-                base_right_query = base_right_query + " WHERE "
             pks_str = self.join_metadata.get_pk_columns_string_of_table(right_table_name)
-            stmt1 =  session.prepare(base_right_query + f"token({pks_str}) > ? AND token({pks_str}) < ? ALLOW FILTERING")
+            stmt1_str = ""
+            stmt2_str = ""
+            stmt3_str = ""
+            idx_where = base_right_query.find("where")
+            if idx_where != -1 :
+                stmt1_str = base_right_query[:idx_where + len("where")] + f" token({pks_str}) > ? AND token({pks_str}) < ? AND" \
+                        + base_right_query[idx_where + len("where"):] + " ALLOW FILTERING"
+                stmt2_str = base_right_query[:idx_where + len("where")] + f" token({pks_str}) > ? AND" \
+                        + base_right_query[idx_where + len("where"):] + " ALLOW FILTERING"
+                stmt3_str = base_right_query[:idx_where + len("where")] + f" token({pks_str}) < ? AND" \
+                        + base_right_query[idx_where + len("where"):] + " ALLOW FILTERING"
+            else:
+                stmt1_str = base_right_query + f" where token({pks_str}) > ? AND token({pks_str}) < ? ALLOW FILTERING"
+                stmt2_str = base_right_query + f" where token({pks_str}) > ? ALLOW FILTERING"
+                stmt3_str = base_right_query + f" where token({pks_str}) < ? ALLOW FILTERING"
+            stmt1 =  session.prepare(stmt1_str)
             stmt1.fetch_size = fetch_size
-            stmt2 =  session.prepare(base_right_query + f"token({pks_str}) > ? ALLOW FILTERING")
+            stmt2 =  session.prepare(stmt2_str)
             stmt2.fetch_size = fetch_size
-            stmt3 =  session.prepare(base_right_query + f"token({pks_str}) < ? ALLOW FILTERING")
+            stmt3 =  session.prepare(stmt3_str)
             stmt3.fetch_size = fetch_size
             for token in self.token_ranges:
                 condition = token.toCondition(pks_str)
