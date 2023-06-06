@@ -218,7 +218,6 @@ class JoinExecutor(ABC):
         print("Details of time elapsed\n\n")
         join_time = self.time_elapsed['join']
         fetch_time = self.time_elapsed['data_fetch']
-        total_time = self.time_elapsed['total']
         join_without_fetch = join_time - fetch_time
 
         print(f"Fetch Time: {fetch_time} s")
@@ -315,9 +314,18 @@ class JoinExecutor(ABC):
                 folder = os.path.join(cwd, "results")
                 if (not os.path.isdir(folder)):
                     os.mkdir(folder)
+                message_body = json.loads(body)
                 file_path = os.path.join(folder, save_as + ".txt")
                 with open(file_path, mode='a+') as file:
-                    file.write(body.decode())
+                    file.write(message_body["result"])
+
+                if 'join' not in self.time_elapsed:
+                    self.time_elapsed['join'] = message_body["time_elapsed"]["join"]
+                    self.time_elapsed['data_fetch'] = message_body["time_elapsed"]["data_fetch"]
+                else:
+                    if message_body["time_elapsed"]["join"] > self.time_elapsed["join"]:
+                        self.time_elapsed['join'] = message_body["time_elapsed"]["join"]
+                        self.time_elapsed['data_fetch'] = message_body["time_elapsed"]["data_fetch"]
 
                 if count == len(host_to_token_ranges):
                     ch.stop_consuming()
@@ -357,10 +365,18 @@ class JoinExecutor(ABC):
             file_path = os.path.join(folder, message_body["save_as"] + "_" + str(executor.nodes_order) + ".txt")
             with open(file_path, 'r') as file:
                 file_content = file.read()
+            os.remove(file_path)
+            new_body = {
+                    "time_elapsed": {
+                        "join" : executor.time_elapsed['join'],
+                        "data_fetch" : executor.time_elapsed['data_fetch'],
+                        },
+                    "result": file_content,
+                }
             cn.basic_publish(
                 exchange=JoinExecutor.exchange_name,
                 routing_key=message_body["message_id"],
-                body=file_content,
+                body=json.dumps(new_body)
             )
         channel.basic_consume(
             queue=JoinExecutor.queue_name,

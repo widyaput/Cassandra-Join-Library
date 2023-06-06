@@ -37,7 +37,7 @@ class HashJoinExecutor(JoinExecutor):
         if self.amqp_url:
             super().execute(save_as=save_as)
         if self.session is None:
-            return
+            return self
         initial_time = time.time()
         session = self.session
         selects_valid = None
