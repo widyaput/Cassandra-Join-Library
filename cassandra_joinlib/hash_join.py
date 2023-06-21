@@ -1221,6 +1221,17 @@ class HashJoinExecutor(JoinExecutor):
         else : # Final result is in memory (self.current_result), return immediately
 
             self.current_result = jsonTupleKeyHashEncoder(self.current_result)
+            from decimal import Decimal
+            import uuid
+            from datetime import datetime
+            def custom_serializer(obj):
+                if isinstance(obj, Decimal):
+                    return str(obj)
+                if isinstance(obj, uuid.UUID):
+                    return str(obj)
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
             for row in self.current_result:
                 unsatisfied = False
@@ -1231,7 +1242,7 @@ class HashJoinExecutor(JoinExecutor):
                         break
                 if unsatisfied:
                     continue
-                f_res.write(json.dumps(row)+"\n")
+                f_res.write(json.dumps(row, default=custom_serializer)+"\n")
 
         f_res.close()
         # Delete result
