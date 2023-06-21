@@ -810,7 +810,7 @@ class NestedJoinExecutor(JoinExecutor):
         else:
             is_DSE_direct_join = set(right_table_pks).issubset(set(join_column_right))
         
-        is_DSE_direct_join = is_DSE_direct_join and not self.disable_direct_join and len(self.token_ranges)
+        is_DSE_direct_join = is_DSE_direct_join and not self.disable_direct_join and len(self.token_ranges) and join_info["join_operator"] == "="
 
         initial_fetch_time = time.time()
 
