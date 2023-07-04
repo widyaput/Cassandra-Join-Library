@@ -1,4 +1,5 @@
 import psutil
+import time
 from pympler import asizeof
 import json
 
@@ -62,7 +63,7 @@ class JoinExecutor(ABC):
 
         # Set the maximum size of data (Byte) that can be placed into memory simultaneously
         # Currently is set to 80% of available memory
-        self.max_data_size = int(0.25 * psutil.virtual_memory().available)
+        self.max_data_size = int(0.8 * psutil.virtual_memory().available)
         # self.max_data_size = 2
 
         self.left_data_size = 0
@@ -219,10 +220,13 @@ class JoinExecutor(ABC):
         join_time = self.time_elapsed['join']
         fetch_time = self.time_elapsed['data_fetch']
         join_without_fetch = join_time - fetch_time
+        total_elapsed = self.time_elapsed['total_time_elapsed']
 
         print(f"Fetch Time: {fetch_time} s")
         print(f"Join without fetch time: {join_without_fetch} s")
         print(f"Join total time: {join_time} s")
+        if total_elapsed:
+            print(f"Total time elapsed including network: {total_elapsed} s")
 
         return self
 
@@ -282,6 +286,7 @@ class JoinExecutor(ABC):
             from copy import deepcopy
             message_id = str(uuid4())
             counter = self.nodes_order
+            start_send = time.time()
             for host in host_to_token_ranges:
                 executor = deepcopy(self)
                 counter += 1
@@ -328,6 +333,8 @@ class JoinExecutor(ABC):
                         self.time_elapsed['data_fetch'] = message_body["time_elapsed"]["data_fetch"]
 
                 if count == len(host_to_token_ranges):
+                    end_receive = time.time()
+                    self.time_elapsed['total_time_elapsed'] = end_receive - start_send
                     ch.stop_consuming()
                 
             channel.basic_consume(queue=temp_queue_name, auto_ack=True, on_message_callback=cb)
@@ -359,6 +366,7 @@ class JoinExecutor(ABC):
             session.row_factory = dict_factory
             executor.session = session
             executor.token_ranges = token_ranges
+            executor.max_data_size = psutil.virtual_memory().available
             executor.execute(save_as=message_body["save_as"])
             cwd = os.getcwd()
             folder = os.path.join(cwd, "results")

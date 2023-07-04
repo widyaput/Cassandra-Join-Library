@@ -81,6 +81,8 @@ class HashJoinExecutor(JoinExecutor):
                                             if not(column in query):
                                                 idx = query.index("FROM") 
                                                 self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
+                                                self.selected_cols[table_name] = self.selected_cols[table_name].union(column)
+                                                
                     else:
                         addColumn(condition.lhs)
                         if condition.rhs is not None:
@@ -88,7 +90,7 @@ class HashJoinExecutor(JoinExecutor):
                     
                 def parseFilter(condition: Condition):
                     if (condition.is_base()):
-                        if not isinstance(condition.lhs, Condition) and not isinstance(condition.rhs, Condition):
+                        if not isinstance(condition.lhs, Condition) and not isinstance(condition.rhs, Condition) and not ((condition.operator == "IN") or (condition.operator == "CONTAINS")):
                             if (isinstance(condition.lhs, str)):
                                 table_name, column = condition.lhs.split('.')
                                 if self.join_metadata.is_table_exists(table_name) \
@@ -123,6 +125,7 @@ class HashJoinExecutor(JoinExecutor):
                                             if not(column in query):
                                                 idx = query.index("FROM") 
                                                 self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
+                                                self.selected_cols[table_name] = self.selected_cols[table_name].union(column)
                                         
                                         self.table_query[table_name] += " ALLOW FILTERING"
                         
@@ -567,17 +570,17 @@ class HashJoinExecutor(JoinExecutor):
 
         else : # Non first join, left table may in self.current_result or in partitions
             if (self.current_result == []): # Result of previous join is in local disk as partitions
-                print(f"Left table for join order {self.join_order} will be fetched from disk")
+                # print(f"Left table for join order {self.join_order} will be fetched from disk")
                 left_table_rows = None
                 is_data_in_partitions = True
                 partition_ids = self.current_join_partition_ids
 
-                print("Left table partition ids : ", self.current_join_partition_ids)
+                # print("Left table partition ids : ", self.current_join_partition_ids)
 
                 return left_table_rows, is_data_in_partitions, partition_ids
 
             else :
-                print(f"Left table for join order {self.join_order} will be fetched from memory")
+                # print(f"Left table for join order {self.join_order} will be fetched from memory")
                 left_table_rows = self.current_result
                 self.left_data_size = asizeof.asizeof(left_table_rows)
                 
@@ -835,10 +838,10 @@ class HashJoinExecutor(JoinExecutor):
         if (is_left_table_in_partitions and is_right_table_in_partitions):
             all_partition_ids = left_partition_ids.union(right_partition_ids)
 
-            print("Left partition ids : ", left_partition_ids)
-            print("Right partition ids : ", right_partition_ids)
-            print("Merged Partition ids : ", all_partition_ids)
-
+            # print("Left partition ids : ", left_partition_ids)
+            # print("Right partition ids : ", right_partition_ids)
+            # print("Merged Partition ids : ", all_partition_ids)
+            #
             self._execute_partition_join(join_info, next_join_info, all_partition_ids)
 
         else :
@@ -896,6 +899,10 @@ class HashJoinExecutor(JoinExecutor):
         
         left_table_column_names = self.join_metadata.get_columns_of_table(left_table_name)
         right_table_column_names = self.join_metadata.get_columns_of_table(right_table_name)
+        if left_table in self.selected_cols:
+            left_table_column_names = self.selected_cols[left_table]
+        if right_table in self.selected_cols:
+            right_table_column_names = self.selected_cols[right_table]
 
         # Add column names to join_info [MIGHT BE DELETED]
         join_info['left_columns'] = left_table_column_names
@@ -904,7 +911,7 @@ class HashJoinExecutor(JoinExecutor):
         intermediate_result = IntermediatePartitionedHashResult(join_info, self.max_data_size, next_join_info)
         result_partition_ids = intermediate_result.build_result(partition_ids)
 
-        print("Execute partition join ids : ", result_partition_ids)
+        # print("Execute partition join ids : ", result_partition_ids)
 
         # Save partition_ids of result for next join in case needed
         self.current_join_partition_ids = result_partition_ids
@@ -916,8 +923,8 @@ class HashJoinExecutor(JoinExecutor):
         # new_left_table_column_names = left_table_column_names.union(right_table_column_names)
         # self.current_result_column_names = new_left_table_column_names
 
-        print(f"{join_type} JOIN with order num {self.join_order} completed with Partition Method")
-        print(f"Result partitions ID are : {result_partition_ids}\n\n")
+        # print(f"{join_type} JOIN with order num {self.join_order} completed with Partition Method")
+        # print(f"Result partitions ID are : {result_partition_ids}\n\n")
 
         return
     
@@ -959,6 +966,10 @@ class HashJoinExecutor(JoinExecutor):
 
         left_table_column_names = self.join_metadata.get_columns_of_table(left_table_name)
         right_table_column_names = self.join_metadata.get_columns_of_table(right_table_name)
+        if left_table in self.selected_cols:
+            left_table_column_names = self.selected_cols[left_table]
+        if right_table in self.selected_cols:
+            right_table_column_names = self.selected_cols[right_table]
 
         # Add column names to join_info [MIGHT BE DELETED]
         join_info['left_columns'] = left_table_column_names

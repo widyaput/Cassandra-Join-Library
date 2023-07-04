@@ -167,7 +167,7 @@ def read_from_partition(join_order, partition_id, is_build):
 
     # File not found check
     if (not os.path.isfile(partition_path)):
-        print(f"Partition {partition_name} from Join Order : {join_order} is not found!")
+        # print(f"Partition {partition_name} from Join Order : {join_order} is not found!")
         return None
 
     f = open(partition_path, 'r')
@@ -180,7 +180,7 @@ def read_from_partition(join_order, partition_id, is_build):
 
     data = jsonTupleKeyHashDecoder(data)
 
-    print(f"READ FROM PARTITION {partition_name}")
+    # print(f"READ FROM PARTITION {partition_name}")
 
     return data
 
@@ -213,7 +213,7 @@ def read_from_partition_nonhash(join_order, partition_id, is_left_table):
 
     # File not found check
     if (not os.path.isfile(partition_path)):
-        print(f"Partition {partition_name} from Join Order : {join_order} is not found!")
+        # print(f"Partition {partition_name} from Join Order : {join_order} is not found!")
         return None
 
     f = open(partition_path, 'r')
@@ -245,6 +245,17 @@ def put_into_partition(data_page, join_order, table_name, join_column, is_left_t
     if (not os.path.isdir(iter_path)):
         os.mkdir(iter_path)
 
+    from decimal import Decimal
+    import uuid
+    from datetime import datetime
+    def custom_serializer(obj):
+        if isinstance(obj, Decimal):
+            return str(obj)
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
     for data in data_page:
         join_column_value = get_value_from_dict(join_column, table_name, data)
@@ -265,7 +276,7 @@ def put_into_partition(data_page, join_order, table_name, join_column, is_left_t
         data = jsonTupleKeyHashUnitEncoder(data)
 
         f = open(partition_fullname, mode='a')
-        f.write(json.dumps(data)+"\n")
+        f.write(json.dumps(data, default=custom_serializer)+"\n")
         f.close()
     
 
@@ -419,10 +430,10 @@ def update_partition_nonhash(partition_data, join_order, partition_id, is_left_t
     partition_path = os.path.join(iter_path, partition_name)
 
     if (not os.path.exists(partition_path)):
-        if (is_left_table):
-            print(f"Left Partition {partition_id} on Join order {join_order} cannot be found!")
-        else:
-            print(f"Right Partition {partition_id} on Join order {join_order} cannot be found!")
+        # if (is_left_table):
+        #     # print(f"Left Partition {partition_id} on Join order {join_order} cannot be found!")
+        # else:
+        #     print(f"Right Partition {partition_id} on Join order {join_order} cannot be found!")
         
         return False
 

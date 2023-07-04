@@ -157,20 +157,20 @@ class Condition():
                     if column in self.rows:
                         raw_rhs = self.rows[column][table_name]
             if self.operator == ">":
-                return raw_lhs > raw_rhs
+                return raw_lhs is not None and raw_lhs > raw_rhs
             if self.operator == "<":
-                return raw_lhs < raw_rhs
+                return raw_lhs is not None and raw_lhs < raw_rhs
             if self.operator == ">=":
-                return raw_lhs >= raw_rhs
+                return raw_lhs is not None and raw_lhs >= raw_rhs
             if self.operator == "<=":
-                return raw_lhs <= raw_rhs
+                return raw_lhs is not None and raw_lhs <= raw_rhs
             if self.operator == "=":
-                return raw_lhs == raw_rhs
+                return raw_lhs is not None and raw_lhs == raw_rhs
             if self.operator == "IN":
                 assert(isinstance(raw_rhs, List) or isinstance(raw_rhs, Sequence))
-                return raw_lhs in raw_rhs
+                return raw_lhs is not None and raw_lhs in raw_rhs
             if self.operator == "CONTAINS":
-                return raw_rhs in raw_lhs
+                return raw_lhs is not None and raw_rhs in raw_lhs
             raise Exception("Operator not supported")
             
         if self.operator == 'NOT':

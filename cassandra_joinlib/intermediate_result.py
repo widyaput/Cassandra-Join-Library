@@ -214,8 +214,8 @@ class IntermediateDirectHashResult:
 
                         if (should_use_partition):
                             
-                            row_partition_id = put_into_partition([merged], result_join_num, self.next_join_table, self.next_join_column)
-                            partition_id = partitions_id.union(row_partition_id)
+                            row_partition_id = put_into_partition([merged], result_join_num, self.next_join_table, self.next_join_column, True)
+                            partitions_id = partitions_id.union(row_partition_id)
 
                         else :
                             result.append(merged)
@@ -239,8 +239,8 @@ class IntermediateDirectHashResult:
                                 merged_list.append(merged)
 
                             if (should_use_partition):
-                                row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
-                                partition_id = partition_id.union(row_partition_id)
+                                row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column, True)
+                                partitions_id = partitions_id.union(row_partition_id)
                             
                             else :
                                 result = result + merged_list
@@ -260,8 +260,8 @@ class IntermediateDirectHashResult:
                                 merged_list.append(merged)
 
                             if (should_use_partition):
-                                row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
-                                partition_id = partition_id.union(row_partition_id)
+                                row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column, True)
+                                partitions_id = partitions_id.union(row_partition_id)
                             
                             else :
                                 result = result + merged_list
@@ -280,8 +280,8 @@ class IntermediateDirectHashResult:
                                 merged_list.append(merged)
 
                                 if (should_use_partition):
-                                    row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
-                                    partition_id = partition_id.union(row_partition_id)
+                                    row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column, True)
+                                    partitions_id = partitions_id.union(row_partition_id)
 
                                 else :
                                     result = result + merged_list
@@ -297,18 +297,19 @@ class IntermediateDirectHashResult:
                                 merged_list.append(merged)
 
                                 if (should_use_partition):
-                                    row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
-                                    partition_id = partition_id.union(row_partition_id)
+                                    row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column, True)
+                                    partitions_id = partitions_id.union(row_partition_id)
 
                                 else :
                                     result = result + merged_list
                         
                     # Preserve Memory
                     left_item[left_idx] = None
+            self.hash_table[key] = []
 
 
         # Flush no matching rows
-        if (self.add_row_to_left_nomatch != [] or self.add_row_to_right_nomatch != []):
+        if (self.no_match_left_rows != [] or self.no_match_right_rows != []):
             if (self.join_type == "LEFT_OUTER"):
                 if (self.build == "R"):
                     dummy_right = construct_null_columns(self.right_table, self.right_table_meta)
@@ -324,7 +325,7 @@ class IntermediateDirectHashResult:
                         self.no_match_left_rows[row_idx] = None
 
                     if (should_use_partition):
-                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column, True)
                     
                     else :
                         result = result + merged_list
@@ -344,7 +345,7 @@ class IntermediateDirectHashResult:
                         self.no_match_right_rows[row_idx] = None
 
                     if (should_use_partition):
-                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column, True)
                     
                     else :
                         result = result + merged_list
@@ -363,7 +364,7 @@ class IntermediateDirectHashResult:
                         self.no_match_left_rows[row_idx] = None
 
                     if (should_use_partition):
-                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column, True)
                     
                     else :
                         result = result + merged_list
@@ -382,14 +383,13 @@ class IntermediateDirectHashResult:
                         self.no_match_right_rows[row_idx] = None
 
                     if (should_use_partition):
-                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column)
+                        row_partition_id = put_into_partition(merged_list, result_join_num, self.next_join_table, self.next_join_column, True)
                     
                     else :
                         result = result + merged_list
 
 
-            # Remove after usage, maintain memory usage
-            self.hash_table[key] = []
+                # Remove after usage, maintain memory usage
 
         # Reset
         self.hash_table = {}

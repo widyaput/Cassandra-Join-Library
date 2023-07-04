@@ -103,6 +103,7 @@ class NestedJoinExecutor(JoinExecutor):
                                             if not(column in query):
                                                 idx = query.index("FROM") 
                                                 self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
+                                                self.selected_cols[table_name] = self.selected_cols[table_name].union(column)
                     else:
                         addColumn(condition.lhs)
                         if condition.rhs is not None:
@@ -110,7 +111,7 @@ class NestedJoinExecutor(JoinExecutor):
                     
                 def parseFilter(condition: Condition):
                     if (condition.is_base()):
-                        if not isinstance(condition.lhs, Condition) and not isinstance(condition.rhs, Condition):
+                        if not isinstance(condition.lhs, Condition) and not isinstance(condition.rhs, Condition) and not ((condition.operator == "IN") or (condition.operator == "CONTAINS")):
                             if (isinstance(condition.lhs, str)):
                                 table_name, column = condition.lhs.split('.')
                                 if self.join_metadata.is_table_exists(table_name) \
@@ -145,6 +146,7 @@ class NestedJoinExecutor(JoinExecutor):
                                             if not(column in query):
                                                 idx = query.index("FROM") 
                                                 self.table_query[table_name] = query[:idx] + ", " + column + " " + query[idx:]
+                                                self.selected_cols[table_name] = self.selected_cols[table_name].union(column)
                                         
                                         self.table_query[table_name] += " ALLOW FILTERING"
                         
@@ -563,7 +565,7 @@ class NestedJoinExecutor(JoinExecutor):
             
         else : # Non first order join, left table may from partitions or cassandra
             if (self.current_result == []):
-                print(f"Left table for join order {self.join_order} will be fetched from disk")
+                # print(f"Left table for join order {self.join_order} will be fetched from disk")
                 left_last_partition_id = self.left_table_last_partition_id
                 is_data_in_partitions = True
 
@@ -571,7 +573,7 @@ class NestedJoinExecutor(JoinExecutor):
                 
             
             else :
-                print(f"Left table for join order {self.join_order} will be fetched from memory")
+                # print(f"Left table for join order {self.join_order} will be fetched from memory")
                 left_table_rows = self.current_result
                 self.left_data_size = asizeof.asizeof(left_table_rows)
 
@@ -836,18 +838,18 @@ class NestedJoinExecutor(JoinExecutor):
         # Do join based on whether data is partitioned. There are 4 possibilities
         if (is_left_in_partitions):
             if (is_right_in_partitions):
-                print(f"Join order {join_order} using execute both partition")
+                # print(f"Join order {join_order} using execute both partition")
                 self._execute_both_partition(join_info)
             else :
-                print(f"Join order {join_order} using left in partition")
+                # print(f"Join order {join_order} using left in partition")
                 self._execute_left_partition(join_info, right_table_rows)
 
         else: # Left data is in memory
             if (is_right_in_partitions):
-                print(f"Join order {join_order} using right in partition")
+                # print(f"Join order {join_order} using right in partition")
                 self._execute_right_partition(join_info, left_table_rows)
             else :
-                print(f"Join order {join_order} using both in direct")
+                # print(f"Join order {join_order} using both in direct")
                 self._execute_both_direct(join_info, left_table_rows, right_table_rows)
 
         # Flush if self.partition is not empty
@@ -1237,6 +1239,8 @@ class NestedJoinExecutor(JoinExecutor):
                 right_table_name = right_alias
 
             right_table_columnns = self.join_metadata.get_columns_of_table(right_table_name)
+            if right_table in self.selected_cols:
+                right_table_columnns = self.selected_cols[right_table]
             right_data = construct_null_columns(right_table_name, right_table_columnns)
 
             merged_row = self._force_merge_row(left_data, right_data)
@@ -1262,6 +1266,8 @@ class NestedJoinExecutor(JoinExecutor):
                 left_table_name = left_alias
 
             left_table_columns = self.join_metadata.get_columns_of_table(left_table_name)
+            if left_table in self.selected_cols:
+                left_table_columns = self.selected_cols[left_table]
             left_data = construct_null_columns(left_table_name, left_table_columns)
 
             merged_row = self._force_merge_row(left_data, right_data)
@@ -1316,7 +1322,7 @@ class NestedJoinExecutor(JoinExecutor):
                     data = json.loads(line)
                     unsatisfied = False
                     for condition in self.filter_conditions:
-                        condition.set_rows(data)
+                        condition.set_rows(data['data'])
                         if not condition:
                             unsatisfied = True
                             break
@@ -1345,7 +1351,7 @@ class NestedJoinExecutor(JoinExecutor):
             for row in self.current_result:
                 unsatisfied = False
                 for condition in self.filter_conditions:
-                    condition.set_rows(row)
+                    condition.set_rows(row['data'])
                     if not condition:
                         unsatisfied = True
                         break
