@@ -63,7 +63,7 @@ class JoinExecutor(ABC):
 
         # Set the maximum size of data (Byte) that can be placed into memory simultaneously
         # Currently is set to 80% of available memory
-        self.max_data_size = int(0.8 * psutil.virtual_memory().available)
+        self.max_data_size = int(0.7 * psutil.virtual_memory().total)
         # self.max_data_size = 2
 
         self.left_data_size = 0
@@ -220,12 +220,12 @@ class JoinExecutor(ABC):
         join_time = self.time_elapsed['join']
         fetch_time = self.time_elapsed['data_fetch']
         join_without_fetch = join_time - fetch_time
-        total_elapsed = self.time_elapsed['total_time_elapsed']
 
         print(f"Fetch Time: {fetch_time} s")
         print(f"Join without fetch time: {join_without_fetch} s")
         print(f"Join total time: {join_time} s")
-        if total_elapsed:
+        if 'total_time_elapsed' in self.time_elapsed:
+            total_elapsed = self.time_elapsed['total_time_elapsed']
             print(f"Total time elapsed including network: {total_elapsed} s")
 
         return self
@@ -264,24 +264,6 @@ class JoinExecutor(ABC):
                 else:
                     host_to_token_ranges[host].append(token_ranges)
             
-            # for command in self.command_queue:
-            #     if isinstance(command, SelectCommand):
-            #         table = command.table
-            #         columns = command.columns
-            #
-            #         if (not table in self.selected_cols):
-            #             self.selected_cols[table] = columns
-            #
-            #         else :
-            #             self.selected_cols[table] = columns.union(self.selected_cols[table])    
-            #     if isinstance(command, JoinCommand):
-            #         if (not self.selects_validation()):
-            #             print("Some join columns are not selected")
-            #             return
-            #         query = f"select count(*) as count from {self.keyspace}.{command.left_table}" 
-            #         result = self.session.execute(query)
-            #         self.leftest_table_size = result.one()['count']
-            #         break
             self.session = None
             from copy import deepcopy
             message_id = str(uuid4())
@@ -366,7 +348,7 @@ class JoinExecutor(ABC):
             session.row_factory = dict_factory
             executor.session = session
             executor.token_ranges = token_ranges
-            executor.max_data_size = psutil.virtual_memory().available
+            executor.max_data_size = int(0.7 * psutil.virtual_memory().total)
             executor.execute(save_as=message_body["save_as"])
             cwd = os.getcwd()
             folder = os.path.join(cwd, "results")

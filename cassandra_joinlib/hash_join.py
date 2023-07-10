@@ -845,7 +845,11 @@ class HashJoinExecutor(JoinExecutor):
             self._execute_partition_join(join_info, next_join_info, all_partition_ids)
 
         else :
-            max_join_res_size = asizeof.asizeof(left_table_rows) * asizeof.asizeof(right_table_rows)
+            assert left_table_rows is not None
+            assert right_table_rows is not None
+            average_left = asizeof.asizeof(left_table_rows) / len(left_table_rows)
+            average_right = asizeof.asizeof(right_table_rows) / len(right_table_rows)
+            max_join_res_size = (average_left + average_right) * len(left_table_rows) * len(right_table_rows)
             if (max_join_res_size + self.get_data_size() >= self.max_data_size):
                 if (not is_left_table_in_partitions):
                     left_partition_ids = put_into_partition(left_table_rows, self.join_order, left_table_name, join_column, True)
