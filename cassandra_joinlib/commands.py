@@ -95,40 +95,6 @@ class Condition():
                 return True
             return (self.lhs.is_always_and() and self.rhs.is_always_and())
         return False
-
-    def is_there_or(self) -> bool:
-        if self.is_base():
-            return False
-        if self.operator == 'OR':
-            return True
-        if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):
-            if self.lhs.is_base() and self.rhs.is_base():
-                return False
-            return (self.lhs.is_there_or() or self.rhs.is_there_or())
-        return False
-
-    
-        
-    def is_there_not(self) -> bool:
-        if self.is_base():
-            return False
-        if self.operator == 'NOT':
-            return True
-        if isinstance(self.lhs, Condition) and isinstance(self.rhs, Condition):
-            if self.lhs.is_base() and self.rhs.is_base():
-                return False
-            return (self.lhs.is_there_not() or self.rhs.is_there_not())
-        return False
-        
-
-    def get_table(self):
-        left_table_name = ''
-        if (isinstance(self.lhs, str)):
-            if '.' in self.lhs:
-                left_table_name, _= self.lhs.split('.')
-        elif (isinstance(self.lhs, Condition)):
-            left_table_name = self.lhs.get_table()
-        return left_table_name
         
 
     def __and__(self, other):

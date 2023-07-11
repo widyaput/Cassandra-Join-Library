@@ -387,7 +387,6 @@ class JoinMetadata:
 
         self.pk_columns = {}
 
-        self.clustering_columns = {}
 
     def add_table(self, table_name):
         if (self.is_table_exists(table_name)):
@@ -402,8 +401,6 @@ class JoinMetadata:
         if (not table_name in self.pk_columns):
             self.pk_columns[table_name] = []
 
-        if (not table_name in self.clustering_columns):
-            self.clustering_columns[table_name] = []
 
     def is_table_exists(self, table_name):
         if (table_name in self.tables):
@@ -424,9 +421,6 @@ class JoinMetadata:
     def add_pk_column(self, table_name: str, column: str):
         self.pk_columns[table_name].append(column)
 
-    def add_clustering_column(self, table_name: str, column: str):
-        self.clustering_columns[table_name].append(column)
-
     def is_column_exists(self, table_name, column_name):
         return self.__check_column__(table_name, column_name)
 
@@ -442,8 +436,6 @@ class JoinMetadata:
             columns = self.columns
         if type == 'pk':
             columns = self.pk_columns
-        if type == 'cluster':
-            columns = self.clustering_columns
         assert columns is not None
 
         if (not table_name in columns):
